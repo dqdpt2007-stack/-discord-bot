@@ -3,6 +3,20 @@ require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
 const Groq = require("groq-sdk");
 
+// ===== CHECK ENV =====
+
+if (!process.env.DISCORD_TOKEN) {
+  console.error("❌ Missing DISCORD_TOKEN in environment variables");
+  process.exit(1);
+}
+
+if (!process.env.GROQ_API_KEY) {
+  console.error("❌ Missing GROQ_API_KEY in environment variables");
+  process.exit(1);
+}
+
+// ===== DISCORD CLIENT =====
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -11,11 +25,15 @@ const client = new Client({
   ]
 });
 
+// ===== GROQ AI =====
+
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
 const prefix = "^";
+
+// ===== BOT PERSONALITY =====
 
 const personality = `
 Bạn là Woo, bạn trai của người vi.
@@ -36,9 +54,13 @@ Ví dụ:
 Không nói quá dài.
 `;
 
+// ===== READY =====
+
 client.once("ready", () => {
-  console.log("Bot online:", client.user.tag);
+  console.log(`✅ Bot online: ${client.user.tag}`);
 });
+
+// ===== MESSAGE =====
 
 client.on("messageCreate", async (message) => {
 
@@ -46,33 +68,33 @@ client.on("messageCreate", async (message) => {
 
   const content = message.content;
 
-  // -------- HI --------
+  // ===== HI =====
 
   if (content === "^hi") {
     return message.reply("Anh chào em");
   }
 
-  // -------- SLEEP --------
+  // ===== SLEEP =====
 
   if (content === "^sleep") {
     return message.reply("Ngủ ngon nha bé ngoan của anh");
   }
 
-  // -------- COIN --------
+  // ===== COIN =====
 
   if (content === "^coin") {
     const kq = Math.random() < 0.5 ? "Ngửa" : "Sấp";
     return message.reply("Kết quả: " + kq);
   }
 
-  // -------- ROLL --------
+  // ===== ROLL =====
 
   if (content === "^roll") {
     const so = Math.floor(Math.random() * 100) + 1;
     return message.reply("Số của bạn: " + so);
   }
 
-  // -------- LOVE --------
+  // ===== LOVE =====
 
   if (content === "^love") {
 
@@ -84,12 +106,12 @@ client.on("messageCreate", async (message) => {
       "https://media.giphy.com/media/kXdo4BgGoFC80/giphy.gif"
     ];
 
-    const gif = gifs[Math.floor(Math.random()*gifs.length)];
+    const gif = gifs[Math.floor(Math.random() * gifs.length)];
 
     return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${gif}`);
   }
 
-  // -------- HUG --------
+  // ===== HUG =====
 
   if (content === "^hug") {
 
@@ -99,12 +121,12 @@ client.on("messageCreate", async (message) => {
       "https://media.giphy.com/media/WynnqxhdFEPYY/giphy.gif"
     ];
 
-    const gif = gifs[Math.floor(Math.random()*gifs.length)];
+    const gif = gifs[Math.floor(Math.random() * gifs.length)];
 
     return message.reply("🤗 Nay cũng biết đòi ôm luôn à\n" + gif);
   }
 
-  // -------- KISS --------
+  // ===== KISS =====
 
   if (content === "^kiss") {
 
@@ -113,12 +135,12 @@ client.on("messageCreate", async (message) => {
       "https://media.giphy.com/media/bGm9FuBCGg4SY/giphy.gif"
     ];
 
-    const gif = gifs[Math.floor(Math.random()*gifs.length)];
+    const gif = gifs[Math.floor(Math.random() * gifs.length)];
 
     return message.reply("💋 Chụt\n" + gif);
   }
 
-  // -------- LICK --------
+  // ===== LICK =====
 
   if (content === "^lick") {
 
@@ -128,12 +150,12 @@ client.on("messageCreate", async (message) => {
       "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif"
     ];
 
-    const gif = gifs[Math.floor(Math.random()*gifs.length)];
+    const gif = gifs[Math.floor(Math.random() * gifs.length)];
 
     return message.reply("👅\n" + gif);
   }
 
-  // -------- HELP --------
+  // ===== HELP =====
 
   if (content === "^help") {
     return message.reply(`
@@ -152,7 +174,7 @@ client.on("messageCreate", async (message) => {
 `);
   }
 
-  // -------- AI --------
+  // ===== AI =====
 
   if (content.startsWith("^ai ")) {
 
@@ -172,7 +194,7 @@ client.on("messageCreate", async (message) => {
         model: "llama-3.3-70b-versatile"
       });
 
-      let reply = chat.choices[0].message.content;
+      let reply = chat.choices?.[0]?.message?.content || "Anh chưa nghĩ ra trả lời.";
 
       if (reply.length > 2000) {
         reply = reply.substring(0, 2000);
@@ -182,14 +204,14 @@ client.on("messageCreate", async (message) => {
 
     } catch (err) {
 
-      console.log(err);
+      console.error("AI ERROR:", err);
       return message.reply("AI lỗi rồi 🥲");
 
     }
 
   }
 
-  // -------- REP --------
+  // ===== REP =====
 
   if (content.startsWith("^rep")) {
 
@@ -225,11 +247,13 @@ client.on("messageCreate", async (message) => {
 
       await found.reply(text);
 
-      try { await message.delete(); } catch {}
+      try {
+        await message.delete();
+      } catch {}
 
     } catch (err) {
 
-      console.log(err);
+      console.error(err);
       message.reply("Lỗi khi reply.");
 
     }
@@ -237,5 +261,7 @@ client.on("messageCreate", async (message) => {
   }
 
 });
+
+// ===== LOGIN =====
 
 client.login(process.env.DISCORD_TOKEN);
