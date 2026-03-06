@@ -97,19 +97,6 @@ bots.forEach(config => {
       return message.reply("Ngủ ngon nha");
     }
 
-    // ===== COIN =====
-
-    if (content === prefix + "coin") {
-      const kq = Math.random() < 0.5 ? "Ngửa" : "Sấp";
-      return message.reply("Kết quả: " + kq);
-    }
-
-    // ===== ROLL =====
-
-    if (content === prefix + "roll") {
-      const so = Math.floor(Math.random() * 100) + 1;
-      return message.reply("Số của bạn: " + so);
-    }
 
     // ===== LOVE =====
 
@@ -136,9 +123,11 @@ bots.forEach(config => {
 
 ${prefix}hi
 ${prefix}sleep
-${prefix}coin
-${prefix}roll
 ${prefix}love
+${prefix}hug
+${prefix}lick
+${prefix}kiss
+${prefix}rep <id> <text>
 ${prefix}ai <text>
 `);
     }
@@ -179,6 +168,98 @@ ${prefix}ai <text>
       }
 
     }
+// ===== HUG =====
+if (content === prefix + "hug") {
+
+  const gifs = [
+    "https://media.giphy.com/media/QFPoctlgZ5s0E/giphy.gif",
+    "https://media.giphy.com/media/svXXBgduBsJ1u/giphy.gif",
+    "https://media.giphy.com/media/WynnqxhdFEPYY/giphy.gif"
+  ];
+
+  const gif = gifs[Math.floor(Math.random() * gifs.length)];
+
+  return message.reply("🤗 Nay cũng biết đòi ôm luôn à\n" + gif);
+}
+
+// ===== KISS =====
+if (content === prefix + "kiss") {
+
+  const gifs = [
+    "https://media.giphy.com/media/FqBTvSNjNzeZG/giphy.gif",
+    "https://media.giphy.com/media/bGm9FuBCGg4SY/giphy.gif"
+  ];
+
+  const gif = gifs[Math.floor(Math.random() * gifs.length)];
+
+  return message.reply("💋 Chụt\n" + gif);
+}
+
+// ===== LICK =====
+if (content === prefix + "lick") {
+
+  const gifs = [
+    "https://media.giphy.com/media/11k3oaUjSlFR4I/giphy.gif",
+    "https://media.giphy.com/media/QX6wZEQB33qaheyJlw/giphy.gif",
+    "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif"
+  ];
+
+  const gif = gifs[Math.floor(Math.random() * gifs.length)];
+
+  return message.reply("👅\n" + gif);
+}
+
+
+// ===== REP =====
+
+if (content.startsWith(prefix + "rep")) {
+
+  const args = content.split(" ");
+  const msgID = args[1];
+  const text = args.slice(2).join(" ");
+
+  if (!msgID || !text) {
+return message.reply(`Dùng: ${prefix}rep <messageID> <nội dung>`);  }
+
+  try {
+
+    let found = null;
+
+    for (const channel of message.guild.channels.cache.values()) {
+
+      if (!channel.isTextBased()) continue;
+
+      try {
+
+        const msg = await channel.messages.fetch(msgID);
+
+        if (msg) {
+          found = msg;
+          break;
+        }
+
+      } catch {}
+
+    }
+
+    if (!found) {
+      return message.reply("Không tìm thấy message.");
+    }
+
+    await found.reply(text);
+
+    try {
+      await message.delete();
+    } catch {}
+
+  } catch (err) {
+
+    console.error(err);
+    message.reply("Lỗi khi reply.");
+
+  }
+
+}
 
   });
 
