@@ -88,7 +88,7 @@ bots.forEach(config => {
     // ===== HI =====
 
     if (content === prefix + "hi") {
-      return message.reply("Xin chào");
+      return message.reply("Anh chào em nha");
     }
 
     // ===== SLEEP =====
