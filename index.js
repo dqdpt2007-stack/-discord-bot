@@ -1,13 +1,21 @@
-require('dotenv').config();
+require("dotenv").config();
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits } = require("discord.js");
 const Groq = require("groq-sdk");
 
-const token = process.env.DISCORD_TOKEN;
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
+});
 
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
+
+const prefix = "^";
 
 const personality = `
 Bạn là Woo, bạn trai của người vi.
@@ -28,85 +36,60 @@ Ví dụ:
 Không nói quá dài.
 `;
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+client.once("ready", () => {
+  console.log("Bot online:", client.user.tag);
 });
 
-const prefix = "^";
-
-client.once('ready', () => {
-  console.log(`Bot đã online: ${client.user.tag}`);
-});
-
-client.on('messageCreate', async message => {
+client.on("messageCreate", async (message) => {
 
   if (message.author.bot) return;
 
   const content = message.content;
 
-  // ---------------- BASIC ----------------
+  // -------- HI --------
 
   if (content === "^hi") {
     return message.reply("Anh chào em");
   }
 
+  // -------- SLEEP --------
+
   if (content === "^sleep") {
     return message.reply("Ngủ ngon nha bé ngoan của anh");
   }
+
+  // -------- COIN --------
 
   if (content === "^coin") {
     const kq = Math.random() < 0.5 ? "Ngửa" : "Sấp";
     return message.reply("Kết quả: " + kq);
   }
 
+  // -------- ROLL --------
+
   if (content === "^roll") {
     const so = Math.floor(Math.random() * 100) + 1;
     return message.reply("Số của bạn: " + so);
   }
 
-  // ---------------- LOVE ----------------
+  // -------- LOVE --------
 
   if (content === "^love") {
 
     const percent = Math.floor(Math.random() * 101);
-    let gif;
 
-    if (percent > 80) {
-      gif = "https://media.giphy.com/media/G3va31oEEnIkM/giphy.gif";
-    } else if (percent > 50) {
-      gif = "https://media.giphy.com/media/3o7TKTDn976rzVgky4/giphy.gif";
-    } else {
-      gif = "https://media.giphy.com/media/kXdo4BgGoFC80/giphy.gif";
-    }
+    const gifs = [
+      "https://media.giphy.com/media/G3va31oEEnIkM/giphy.gif",
+      "https://media.giphy.com/media/3o7TKTDn976rzVgky4/giphy.gif",
+      "https://media.giphy.com/media/kXdo4BgGoFC80/giphy.gif"
+    ];
+
+    const gif = gifs[Math.floor(Math.random()*gifs.length)];
 
     return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${gif}`);
   }
 
-  // ---------------- HELP ----------------
-
-  if (content === "^help") {
-    return message.reply(`
-📜 Lệnh của bot
-
-^hi - chào bot
-^sleep - chúc ngủ ngon
-^coin - tung đồng xu
-^roll - random số 1-100
-^love - độ thiện cảm
-^hug - ôm
-^kiss - hôn
-^lick - liếm
-^boobs - 😏
-^rep <id> <text> - reply tin nhắn theo ID
-^ai <text> - chat AI
-`);
-  }
-
-  // ---------------- HUG ----------------
+  // -------- HUG --------
 
   if (content === "^hug") {
 
@@ -121,7 +104,7 @@ client.on('messageCreate', async message => {
     return message.reply("🤗 Nay cũng biết đòi ôm luôn à\n" + gif);
   }
 
-  // ---------------- KISS ----------------
+  // -------- KISS --------
 
   if (content === "^kiss") {
 
@@ -135,7 +118,7 @@ client.on('messageCreate', async message => {
     return message.reply("💋 Chụt\n" + gif);
   }
 
-  // ---------------- LICK ----------------
+  // -------- LICK --------
 
   if (content === "^lick") {
 
@@ -150,21 +133,26 @@ client.on('messageCreate', async message => {
     return message.reply("👅\n" + gif);
   }
 
-  // ---------------- BOOBS ----------------
+  // -------- HELP --------
 
-  if (content === "^boobs") {
+  if (content === "^help") {
+    return message.reply(`
+📜 Lệnh của bot
 
-    const gifs = [
-      "https://media.giphy.com/media/10yIEN8cMn4i9W/giphy.gif",
-      "https://media.giphy.com/media/3o6Zt481isNVuQI1l6/giphy.gif"
-    ];
-
-    const gif = gifs[Math.floor(Math.random()*gifs.length)];
-
-    return message.reply("😏 Surprise\n" + gif);
+^hi - chào bot
+^sleep - chúc ngủ ngon
+^coin - tung đồng xu
+^roll - random số
+^love - độ thiện cảm
+^hug - ôm
+^kiss - hôn
+^lick - liếm
+^rep <id> <text> - reply tin nhắn
+^ai <text> - chat AI
+`);
   }
 
-  // ---------------- AI ----------------
+  // -------- AI --------
 
   if (content.startsWith("^ai ")) {
 
@@ -184,7 +172,13 @@ client.on('messageCreate', async message => {
         model: "llama-3.3-70b-versatile"
       });
 
-      return message.reply(chat.choices[0].message.content);
+      let reply = chat.choices[0].message.content;
+
+      if (reply.length > 2000) {
+        reply = reply.substring(0, 2000);
+      }
+
+      return message.reply(reply);
 
     } catch (err) {
 
@@ -192,9 +186,10 @@ client.on('messageCreate', async message => {
       return message.reply("AI lỗi rồi 🥲");
 
     }
+
   }
 
-  // ---------------- REP BY ID ----------------
+  // -------- REP --------
 
   if (content.startsWith("^rep")) {
 
@@ -230,9 +225,7 @@ client.on('messageCreate', async message => {
 
       await found.reply(text);
 
-      try {
-        await message.delete();
-      } catch {}
+      try { await message.delete(); } catch {}
 
     } catch (err) {
 
@@ -245,4 +238,4 @@ client.on('messageCreate', async message => {
 
 });
 
-client.login(token);
+client.login(process.env.DISCORD_TOKEN);
