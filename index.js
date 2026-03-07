@@ -66,38 +66,27 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 ];
 
 // ===== START BOT =====
-// ===== ANIME GIF SEARCH =====
+// ======anime search ====
+async function getAnimeGif(tag){
 
-async function getAnimeGif(tag) {
+  try{
 
-  try {
+    const res = await axios.get(`https://nekos.best/api/v2/${tag}`);
 
-    const res = await axios.get(
-      `https://tenor.googleapis.com/v2/search?q=anime ${tag}&key=LIVDSRZULELA&limit=20`
-    );
+    if(!res.data.results || res.data.results.length === 0){
+      return null;
+    }
 
-    const results = res.data.results;
+    return res.data.results[0].url;
 
-    if (!results || results.length === 0) return null;
+  }catch(err){
 
-    const random = results[Math.floor(Math.random() * results.length)];
-
-    const gif =
-      random.media_formats?.gif?.url ||
-      random.media_formats?.tinygif?.url ||
-      random.media_formats?.nanogif?.url;
-
-    return gif || null;
-
-  } catch (err) {
-
-    console.error("GIF ERROR:", err);
+    console.error("GIF ERROR:", err.response?.data || err);
     return null;
 
   }
 
 }
-
 bots.forEach(config => {
 
   const client = new Client({
