@@ -73,7 +73,7 @@ async function getAnimeGif(tag) {
   try {
 
     const res = await axios.get(
-      `https://tenor.googleapis.com/v2/search?q=anime ${tag}&key=LIVDSRZULELA&limit=20&media_filter=gif`
+      `https://tenor.googleapis.com/v2/search?q=anime ${tag}&key=LIVDSRZULELA&limit=20`
     );
 
     const results = res.data.results;
@@ -82,7 +82,12 @@ async function getAnimeGif(tag) {
 
     const random = results[Math.floor(Math.random() * results.length)];
 
-    return random.media_formats.gif.url;
+    const gif =
+      random.media_formats?.gif?.url ||
+      random.media_formats?.tinygif?.url ||
+      random.media_formats?.nanogif?.url;
+
+    return gif || null;
 
   } catch (err) {
 
