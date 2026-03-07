@@ -1,8 +1,13 @@
 require("dotenv").config();
+const cooldown = new Map();
 const fs = require("fs");	
 const axios = require("axios");
-
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Pool } = require("pg");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+const { Client, GatewayIntentBits, PermissionsBitField } = require("discord.js");
 const Groq = require("groq-sdk");
 
 // ===== CHECK ENV =====
@@ -66,18 +71,52 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 const LEVEL_PREFIX = "lvl!";
 const LEVEL_TOKEN = process.env.DISCORD_TOKEN_LVL;
 
-let levels = {};
-const cooldown = new Map();
-
-if (fs.existsSync("./levels.json")) {
-  levels = JSON.parse(fs.readFileSync("./levels.json"));
-}
 
 function xpNeeded(level){
   return 50 * level * level + 50 * level;
 }
 
 // ===== START BOT =====
+async function initDB(){
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS levels (
+      userid TEXT PRIMARY KEY,
+      xp INT DEFAULT 0,
+      level INT DEFAULT 1
+    )
+  `);
+}
+
+initDB();
+async function getLevel(id){
+
+  const res = await pool.query(
+    "SELECT * FROM levels WHERE userid=$1",
+    [id]
+  );
+
+  if(res.rows.length === 0){
+
+    await pool.query(
+      "INSERT INTO levels(userid,xp,level) VALUES($1,0,1)",
+      [id]
+    );
+
+    return {xp:0, level:1};
+
+  }
+
+  return res.rows[0];
+}
+
+async function saveLevel(id,xp,level){
+
+  await pool.query(
+    "UPDATE levels SET xp=$1, level=$2 WHERE userid=$3",
+    [xp,level,id]
+  );
+
+}
 // ======anime search ====
 async function getAnimeGif(tag){
 
@@ -348,14 +387,15 @@ return message.reply(`Dùng: ${prefix}rep <messageID> <nội dung>`);  }
   client.login(config.token);
 
 });
-// ===== LEVEL BOT =====
+/* ===== LEVEL BOT ===== */
+
 
 const levelBot = new Client({
   intents:[
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -363,173 +403,201 @@ levelBot.once("clientReady",()=>{
   console.log("📈 Level bot online:", levelBot.user.tag);
 });
 
-levelBot.on("messageCreate",(message)=>{
+levelBot.on("messageCreate", async (message)=>{
 
   if(message.author.bot) return;
 
   const content = message.content;
-
   const id = message.author.id;
 
-  if(!levels[id]){
-    levels[id] = {xp:0, level:1};
-  }
-
-  /*
-  ========= COMMANDS
-  */
+  /* ========= COMMANDS ========= */
 
   if(content.startsWith(LEVEL_PREFIX)){
 
-    const cmd = content.slice(LEVEL_PREFIX.length);
+  const args = content.slice(LEVEL_PREFIX.length).trim().split(/ +/);
+  const cmd = args[0];
 
+  // ===== PROFILE =====
+  if(cmd === "profile"){
+
+    const user = message.mentions.users.first() || message.author;
+
+    const data = await getLevel(user.id);
+    const need = xpNeeded(data.level);
+
+    return message.reply(
+`👤 ${user.username}
+
+📈 Level: ${data.level}
+⭐ XP: ${data.xp}/${need}`
+    );
+  }
+
+    // ===== RANK =====
     if(cmd === "rank"){
 
-      return message.reply(
-        `📈 Level: ${levels[id].level}\nXP: ${levels[id].xp}`
-      );
+      const data = await getLevel(id);
 
+      return message.reply(
+        `📈 Level: ${data.level}\nXP: ${data.xp}`
+      );
     }
 
+    // ===== HELP =====
     if(cmd === "help"){
 
-  return message.reply(`
-📊 **Level Bot Commands**
+      return message.reply(`
+📊 Level Bot Commands
 
-lvl!rank  
-→ xem level và XP của bạn
+lvl!rank
+→ xem level của bạn
 
-lvl!top  
-→ bảng xếp hạng level server
+lvl!profile
+→ xem profile level
 
-lvl!help  
-→ xem danh sách lệnh
+lvl!top
+→ bảng xếp hạng server
 
-📈 XP System
-• Chat: 5-15 XP
-• Voice: 20 XP / phút
-• Cooldown: 10s
+lvl!reset @user
+→ reset level người dùng (mod)
+
+lvl!resetall
+→ reset toàn server (mod)
 `);
+    }
 
-}
-
+    // ===== TOP =====
     if(cmd === "top"){
 
-  const sorted = Object.entries(levels)
-    .sort((a,b)=>b[1].level - a[1].level)
-    .slice(0,10);
+      const res = await pool.query(
+        "SELECT * FROM levels ORDER BY level DESC, xp DESC LIMIT 10"
+      );
 
-  let text = "🏆 Leaderboard\n";
+      let text = "🏆 Leaderboard\n";
 
-  sorted.forEach((user,i)=>{
+      res.rows.forEach((user,i)=>{
 
-    const member = message.guild.members.cache.get(user[0]);
-    const name = member ? member.user.username : "Unknown";
+        const member = message.guild.members.cache.get(user.userid);
+        const name = member ? member.user.username : "Unknown";
 
-    text += `${i+1}. ${name} Lv.${user[1].level}\n`;
+        text += `${i+1}. ${name} Lv.${user.level}\n`;
+      });
 
-  });
+      return message.reply(text);
+    }
 
-  return message.reply(text);
+    // ===== RESET USER =====
+    if(cmd === "reset"){
 
-}
-// =====RESET LVL==========
-if(cmd === "reset"){
+      if(!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
+        return message.reply("❌ Chỉ mod mới dùng được.");
 
-  if(!message.member.permissions.has("ManageGuild"))
-    return message.reply("❌ Chỉ mod mới dùng được.");
+      const user = message.mentions.users.first();
+      if(!user) return message.reply("❌ Hãy tag người cần reset.");
 
-  const user = message.mentions.users.first();
-  if(!user) return message.reply("❌ Hãy tag người cần reset.");
+      await pool.query(
+        "UPDATE levels SET xp=0, level=1 WHERE userid=$1",
+        [user.id]
+      );
 
-  levels[user.id] = {xp:0, level:1};
+      return message.reply(`🔄 Đã reset level của ${user.username}`);
+    }
 
-  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
+    // ===== RESET ALL =====
+    if(cmd === "resetall"){
 
-  return message.reply(`🔄 Đã reset level của ${user.username}`);
-}
+      if(!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
+        return message.reply("❌ Chỉ mod mới dùng được.");
 
+      await pool.query("DELETE FROM levels");
 
-if(cmd === "resetall"){
+      return message.reply("💥 Đã reset toàn bộ level server.");
+    }
 
-  if(!message.member.permissions.has("ManageGuild"))
-    return message.reply("❌ Chỉ mod mới dùng được.");
-
-  levels = {};
-
-  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
-
-  return message.reply("💥 Đã reset toàn bộ level server.");
-}
-}
-
-  /*
-  ========= CHAT XP
-  */
-
-  if(content.length < 3) return;
-
-  if(cooldown.has(id)){
-
-    const timeLeft = cooldown.get(id) - Date.now();
-
-    if(timeLeft > 0) return;
-
+    return;
   }
 
-  cooldown.set(id, Date.now() + 10000);
+  /* ========= CHAT XP ========= */
 
-  const xp = Math.floor(Math.random()*10)+5;
+if(content.length < 5) return; // chống spam tin nhắn ngắn
 
-  levels[id].xp += xp;
+if(cooldown.has(id)){
 
-  const need = xpNeeded(levels[id].level);
+  const timeLeft = cooldown.get(id) - Date.now();
 
-  if(levels[id].xp >= need){
+  if(timeLeft > 0) return;
 
-    levels[id].xp -= need;
-    levels[id].level++;
+}
 
-    message.channel.send(
-      `🎉 <@${id}> đã lên level ${levels[id].level}`
-    );
+// cooldown 15s
+cooldown.set(id, Date.now() + 15000);
 
-  }
+// random xp
+const xp = Math.floor(Math.random()*8)+5;
 
-  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
+const data = await getLevel(id);
+
+data.xp += xp;
+
+const need = xpNeeded(data.level);
+
+if(data.xp >= need){
+
+  data.xp -= need;
+  data.level++;
+
+  message.channel.send(
+    `🎉 ${message.author.username} đã lên level ${data.level}!`
+  );
+}
+
+await saveLevel(id,data.xp,data.level);
 
 });
+// VOICEXP
+setInterval(async () => {
 
+  levelBot.guilds.cache.forEach(async guild => {
 
-/*
-========= VOICE XP
-*/
+    guild.channels.cache.forEach(async channel => {
 
-setInterval(()=>{
+      if(!channel.isVoiceBased()) return;
 
-  levelBot.guilds.cache.forEach(guild=>{
+      channel.members.forEach(async member => {
 
-    guild.members.cache.forEach(member=>{
+        if(member.user.bot) return;
+        if(member.voice.selfMute || member.voice.selfDeaf) return;
 
-      if(member.voice.channel && !member.user.bot){
+        const id = member.user.id;
+        const data = await getLevel(id);
 
-        const id = member.id;
+        data.xp += 10;
 
-        if(!levels[id]){
-          levels[id] = {xp:0, level:1};
+        const need = xpNeeded(data.level);
+
+        if(data.xp >= need){
+
+          data.xp -= need;
+          data.level++;
+
+          const textChannel = guild.systemChannel;
+
+          if(textChannel){
+            textChannel.send(
+              `🎉 ${member.user.username} đã lên level ${data.level}!`
+            );
+          }
+
         }
 
-        levels[id].xp += 20;
+        await saveLevel(id,data.xp,data.level);
 
-      }
+      });
 
     });
 
   });
 
-  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
-
-},60000);
-
+}, 60000);
 
 levelBot.login(LEVEL_TOKEN);
