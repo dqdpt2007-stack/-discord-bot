@@ -503,12 +503,9 @@ levelBot.on("messageCreate", async (message)=>{
   const id = message.author.id;
 
   /* ========= COMMANDS ========= */
-
-  if(content.startsWith(LEVEL_PREFIX)){
-
-  const args = content.slice(LEVEL_PREFIX.length).trim().split(/ +/);
-  const cmd = args[0];
-}
+  if (content.startsWith(LEVEL_PREFIX)) {
+    const args = content.slice(LEVEL_PREFIX.length).trim().split(/ +/);
+    const cmd = args[0];
   // ===== PROFILE =====
   if(cmd === "profile"){
 const data = await getLevel(id);
@@ -635,48 +632,32 @@ lvl!reward @user <text>
     }
 
     // ===== RESET USER =====
-   if(cmd === "reset"){
+    if(cmd === "reset"){
+      if(!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
+        return message.reply("❌ Mod only");
 
-if(!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild))
-return message.reply("❌ Mod only");
+      const type = args[1];
 
-const type = args[1];
+      if(type === "week"){
+        await pool.query("UPDATE levels SET xp_week=0,lvl_week=1");
+        return message.reply("🔄 Reset tuần");
+      }
 
-if(type === "week"){
+      if(type === "month"){
+        await pool.query("UPDATE levels SET xp_month=0,lvl_month=1");
+        return message.reply("🔄 Reset tháng");
+      }
 
-await pool.query(
-"UPDATE levels SET xp_week=0,lvl_week=1"
-);
-
-return message.reply("🔄 Reset tuần");
-
-}
-
-if(type === "month"){
-
-await pool.query(
-"UPDATE levels SET xp_month=0,lvl_month=1"
-);
-
-return message.reply("🔄 Reset tháng");
-
-}
-
-if(type === "year"){
-
-await pool.query(
-"UPDATE levels SET xp_year=0,lvl_year=1"
-);
-
-return message.reply("🔄 Reset năm");
-
-}
-
-}
+      if(type === "year"){
+        await pool.query("UPDATE levels SET xp_year=0,lvl_year=1");
+        return message.reply("🔄 Reset năm");
+      }
+    }
+  } 
 
   /* ========= CHAT XP ========= */
 
-if(content.length < 5) return; // chống spam tin nhắn ngắn
+  if(content.length < 5) return; // chống spam tin nhắn ngắn
 
 if(cooldown.has(id)){
 
@@ -716,9 +697,7 @@ if(data.xp_year >= needYear){
 data.xp_year -= needYear;
 data.lvl_year++;
 }
-
 await saveLevel(id,data);
-}
 });
 // VOICEXP
 setInterval(async () => {
