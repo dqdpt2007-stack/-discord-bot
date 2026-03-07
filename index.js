@@ -77,7 +77,8 @@ function xpNeeded(level){
 
 // ===== START BOT =====
 async function initDB(){
-  await pool.query(`
+
+await pool.query(`
 CREATE TABLE IF NOT EXISTS levels (
 userid TEXT PRIMARY KEY,
 
@@ -91,7 +92,7 @@ xp_year INT DEFAULT 0,
 lvl_year INT DEFAULT 1
 )
 `);
-}
+
 await pool.query(`
 CREATE TABLE IF NOT EXISTS rewards (
 id SERIAL PRIMARY KEY,
@@ -99,6 +100,8 @@ userid TEXT,
 reward TEXT
 )
 `);
+
+}
 
 initDB();
 async function getLevel(id){
@@ -751,7 +754,7 @@ data.lvl_year++;
 
           if(textChannel){
             textChannel.send(
-              `🎉 ${member.user.username} đã lên level ${data.level}!`
+              `🎉 ${member.user.username} đã lên level ${data.lvl_year}!`
             );
           }
 
