@@ -1,4 +1,5 @@
 require("dotenv").config();
+const fs = require("fs");	
 const axios = require("axios");
 
 const { Client, GatewayIntentBits } = require("discord.js");
@@ -24,7 +25,21 @@ const groq = new Groq({
 
 // ===== BOT CONFIG =====
 const bots = [
+// ===== LEVEL BOT CONFIG =====
 
+const LEVEL_PREFIX = "lvl!";
+const LEVEL_TOKEN = process.env.DISCORD_TOKEN_LVL;
+
+let levels = {};
+const cooldown = new Map();
+
+if (fs.existsSync("./levels.json")) {
+  levels = JSON.parse(fs.readFileSync("./levels.json"));
+}
+
+function xpNeeded(level){
+  return 50 * level * level + 50 * level;
+}
   // ===== BOT 1 =====
   {
     token: process.env.DISCORD_TOKEN_1,
@@ -34,10 +49,7 @@ const bots = [
 BOT 1
 Bạn là Woo
 bạn trai của Vi
- Hướng nội, ít nói, hơi bí ẩn
- Rất cảm xúc và nhạy cảm, dễ đồng cảm với người khác
-Sống theo cảm xúc và lý tưởng, không thích bị ép buộc
-Hiền, mềm mỏng, nhưng khi đã thích ai thì khá bám và chân thành
+ cậu ấy có tính cách ấm áp và vui vẻ, trung thực và được nhiều người yêu mến
 xưng anh gọi người dùng là em
 thường thêm các cảm xúc trong // // ví dụ // ngại ngùng //
 `
@@ -336,3 +348,146 @@ return message.reply(`Dùng: ${prefix}rep <messageID> <nội dung>`);  }
   client.login(config.token);
 
 });
+// ===== LEVEL BOT =====
+
+const levelBot = new Client({
+  intents:[
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates
+  ]
+});
+
+levelBot.once("clientReady",()=>{
+  console.log("📈 Level bot online:", levelBot.user.tag);
+});
+
+levelBot.on("messageCreate",(message)=>{
+
+  if(message.author.bot) return;
+
+  const content = message.content;
+
+  const id = message.author.id;
+
+  if(!levels[id]){
+    levels[id] = {xp:0, level:1};
+  }
+
+  /*
+  ========= COMMANDS
+  */
+
+  if(content.startsWith(LEVEL_PREFIX)){
+
+    const cmd = content.slice(LEVEL_PREFIX.length);
+
+    if(cmd === "rank"){
+
+      return message.reply(
+        `📈 Level: ${levels[id].level}\nXP: ${levels[id].xp}`
+      );
+
+    }
+
+    if(cmd === "help"){
+
+      return message.reply(`
+📊 Level Commands
+
+lvl!rank
+lvl!top
+`);
+
+    }
+
+    if(cmd === "top"){
+
+      const sorted = Object.entries(levels)
+        .sort((a,b)=>b[1].level - a[1].level)
+        .slice(0,10);
+
+      let text = "🏆 Leaderboard\n";
+
+      sorted.forEach((user,i)=>{
+        text += `${i+1}. <@${user[0]}> Lv.${user[1].level}\n`;
+      });
+
+      return message.reply(text);
+
+    }
+
+    return;
+  }
+
+  /*
+  ========= CHAT XP
+  */
+
+  if(content.length < 3) return;
+
+  if(cooldown.has(id)){
+
+    const timeLeft = cooldown.get(id) - Date.now();
+
+    if(timeLeft > 0) return;
+
+  }
+
+  cooldown.set(id, Date.now() + 10000);
+
+  const xp = Math.floor(Math.random()*10)+5;
+
+  levels[id].xp += xp;
+
+  const need = xpNeeded(levels[id].level);
+
+  if(levels[id].xp >= need){
+
+    levels[id].xp -= need;
+    levels[id].level++;
+
+    message.channel.send(
+      `🎉 <@${id}> đã lên level ${levels[id].level}`
+    );
+
+  }
+
+  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
+
+});
+
+
+/*
+========= VOICE XP
+*/
+
+setInterval(()=>{
+
+  levelBot.guilds.cache.forEach(guild=>{
+
+    guild.members.cache.forEach(member=>{
+
+      if(member.voice.channel && !member.user.bot){
+
+        const id = member.id;
+
+        if(!levels[id]){
+          levels[id] = {xp:0, level:1};
+        }
+
+        levels[id].xp += 20;
+
+      }
+
+    });
+
+  });
+
+  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
+
+},60000);
+
+
+levelBot.login(LEVEL_TOKEN);
