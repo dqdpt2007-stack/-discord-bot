@@ -76,33 +76,60 @@ function xpNeeded(level){
 }
 
 // ===== START BOT =====
-async function initDB(){
+async function initDB() {
+  try {
+    console.log("⏳ Đang kết nối và khởi tạo Database...");
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS levels (
+        userid TEXT PRIMARY KEY,
+        xp_week INT DEFAULT 0, lvl_week INT DEFAULT 1,
+        xp_month INT DEFAULT 0, lvl_month INT DEFAULT 1,
+        xp_year INT DEFAULT 0, lvl_year INT DEFAULT 1
+      )
+    `);
 
-await pool.query(`
-CREATE TABLE IF NOT EXISTS levels (
-userid TEXT PRIMARY KEY,
-
-xp_week INT DEFAULT 0,
-lvl_week INT DEFAULT 1,
-
-xp_month INT DEFAULT 0,
-lvl_month INT DEFAULT 1,
-
-xp_year INT DEFAULT 0,
-lvl_year INT DEFAULT 1
-)
-`);
-
-await pool.query(`
-CREATE TABLE IF NOT EXISTS rewards (
-id SERIAL PRIMARY KEY,
-userid TEXT,
-reward TEXT
-)
-`);
-
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rewards (
+        id SERIAL PRIMARY KEY,
+        userid TEXT,
+        reward TEXT
+      )
+    `);
+    
+    console.log("✅ Database đã sẵn sàng và tạo bảng thành công!");
+  } catch (error) {
+    console.error("❌ Lỗi Database nghiêm trọng:", error.message);
+    process.exit(1); // Bắt buộc dừng bot nếu không có DB, tránh lỗi ngầm
+  }
 }
 
+// Bọc toàn bộ quá trình khởi động bot vào một hàm chạy tuần tự
+async function startSystem() {
+  // 1. Chờ Database tạo bảng xong xuôi
+  await initDB();
+
+  // 2. Mới bắt đầu bật Bot 1 & Bot 2
+  bots.forEach(config => {
+    const client = new Client({
+      intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent ]
+    });
+
+    client.once("clientReady", () => {
+      console.log(`✅ Bot online: ${client.user.tag}`);
+    });
+
+    // ... (Giữ nguyên toàn bộ sự kiện client.on("messageCreate") của bạn ở đây) ...
+
+    client.login(config.token);
+  });
+
+  // 3. Cuối cùng mới bật Level Bot
+  levelBot.login(LEVEL_TOKEN);
+}
+
+// Kích hoạt hệ thống
+startSystem();
 initDB();
 async function getLevel(id){
 
