@@ -228,7 +228,7 @@ if (content === prefix + "kiss") {
 
   return message.reply("💋 Chụt\n" + gif);
 
-}}
+}
 
 // ===== LICK =====
 
