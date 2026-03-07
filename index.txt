@@ -51,7 +51,7 @@ thường thêm các cảm xúc trong // // ví dụ // ngại ngùng //
     personality: `
 BOT 2
 Bạn là Kaworu
-bạn trai của shinji nhưng vẫn thích wean-chan
+bạn trai của shinji nhưng vẫn thích "wean"
 xưng anh gọi người dùng là em
 
 Luôn điềm tĩnh, gần như không bị cảm xúc tiêu cực chi phối.
@@ -127,13 +127,45 @@ if (content === prefix + "love") {
 
   const percent = Math.floor(Math.random() * 101);
 
-  const gif = await getAnimeGif("love");
+  let action = "";
+  let gifTag = null;
 
-  if (!gif) {
-    return message.reply(`💖 Độ thiện cảm: **${percent}%**`);
+  if (percent < 10) {
+    action = "😤 Đừng đến gần";
+    gifTag = "slap";
+  }
+  else if (percent < 35) {
+    action = "🤝 Tay em nay ấm quá";
+    gifTag = "handhold";
+  }
+  else if (percent < 50) {
+    action = "🫳 Đừng giận nhe";
+    gifTag = "pat";
+  }
+  else if (percent < 80) {
+    action = "🤗 Ôm cái ";
+    gifTag = "hug";
+  }
+  else if (percent < 99) {
+    action = "💋 Chụt";
+    gifTag = "kiss";
+  }
+  else {
+    action = "💍 Kết hôn với anh nhe";
+    gifTag = "blush";
   }
 
-  return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${gif}`);
+  let gif = null;
+
+  if (gifTag) {
+    gif = await getAnimeGif(gifTag);
+  }
+
+  if (!gif) {
+    return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${action}`);
+  }
+
+  return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${action}\n${gif}`);
 
 }
 
@@ -147,8 +179,9 @@ ${prefix}hi
 ${prefix}sleep
 ${prefix}love
 ${prefix}hug
-${prefix}lick
+${prefix}pat
 ${prefix}kiss
+${prefix}blush
 ${prefix}rep <id> <text>
 ${prefix}ai <text>
 `);
@@ -223,16 +256,26 @@ if (content === prefix + "kiss") {
   return message.reply("💋 Chụt\n" + gif);
 
 }
+// ===== KISS =====
 
-// ===== LICK =====
+if (content === prefix + "blush") {
 
-if (content === prefix + "lick") {
-
-  const gif = await getAnimeGif("lick");
+  const gif = await getAnimeGif("blush");
 
   if (!gif) return message.reply("Không tìm được GIF 😢");
 
-  return message.reply("👅\n" + gif);
+  return message.reply("Ngại...\n" + gif);
+
+}
+// ===== Handhold =====
+
+if (content === prefix + "hand") {
+
+  const gif = await getAnimeGif("handhold");
+
+  if (!gif) return message.reply("Không tìm được GIF 😢");
+
+  return message.reply("Hình như tay em dính gì nà\n" + gif);
 
 }
 
