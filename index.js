@@ -415,22 +415,52 @@ lvl!help
 
     if(cmd === "top"){
 
-      const sorted = Object.entries(levels)
-        .sort((a,b)=>b[1].level - a[1].level)
-        .slice(0,10);
+  const sorted = Object.entries(levels)
+    .sort((a,b)=>b[1].level - a[1].level)
+    .slice(0,10);
 
-      let text = "🏆 Leaderboard\n";
+  let text = "🏆 Leaderboard\n";
 
-      sorted.forEach((user,i)=>{
-        text += `${i+1}. <@${user[0]}> Lv.${user[1].level}\n`;
-      });
+  sorted.forEach((user,i)=>{
 
-      return message.reply(text);
+    const member = message.guild.members.cache.get(user[0]);
+    const name = member ? member.user.username : "Unknown";
 
-    }
+    text += `${i+1}. ${name} Lv.${user[1].level}\n`;
 
-    return;
-  }
+  });
+
+  return message.reply(text);
+
+}
+// =====RESET LVL==========
+if(cmd === "reset"){
+
+  if(!message.member.permissions.has("ManageGuild"))
+    return message.reply("❌ Chỉ mod mới dùng được.");
+
+  const user = message.mentions.users.first();
+  if(!user) return message.reply("❌ Hãy tag người cần reset.");
+
+  levels[user.id] = {xp:0, level:1};
+
+  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
+
+  return message.reply(`🔄 Đã reset level của ${user.username}`);
+}
+
+
+if(cmd === "resetall"){
+
+  if(!message.member.permissions.has("ManageGuild"))
+    return message.reply("❌ Chỉ mod mới dùng được.");
+
+  levels = {};
+
+  fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
+
+  return message.reply("💥 Đã reset toàn bộ level server.");
+}
 
   /*
   ========= CHAT XP
