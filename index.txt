@@ -25,21 +25,6 @@ const groq = new Groq({
 
 // ===== BOT CONFIG =====
 const bots = [
-// ===== LEVEL BOT CONFIG =====
-
-const LEVEL_PREFIX = "lvl!";
-const LEVEL_TOKEN = process.env.DISCORD_TOKEN_LVL;
-
-let levels = {};
-const cooldown = new Map();
-
-if (fs.existsSync("./levels.json")) {
-  levels = JSON.parse(fs.readFileSync("./levels.json"));
-}
-
-function xpNeeded(level){
-  return 50 * level * level + 50 * level;
-}
   // ===== BOT 1 =====
   {
     token: process.env.DISCORD_TOKEN_1,
@@ -76,6 +61,21 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
   }
 
 ];
+// ===== LEVEL BOT CONFIG =====
+
+const LEVEL_PREFIX = "lvl!";
+const LEVEL_TOKEN = process.env.DISCORD_TOKEN_LVL;
+
+let levels = {};
+const cooldown = new Map();
+
+if (fs.existsSync("./levels.json")) {
+  levels = JSON.parse(fs.readFileSync("./levels.json"));
+}
+
+function xpNeeded(level){
+  return 50 * level * level + 50 * level;
+}
 
 // ===== START BOT =====
 // ======anime search ====
@@ -393,14 +393,25 @@ levelBot.on("messageCreate",(message)=>{
 
     if(cmd === "help"){
 
-      return message.reply(`
-📊 Level Commands
+  return message.reply(`
+📊 **Level Bot Commands**
 
-lvl!rank
-lvl!top
+lvl!rank  
+→ xem level và XP của bạn
+
+lvl!top  
+→ bảng xếp hạng level server
+
+lvl!help  
+→ xem danh sách lệnh
+
+📈 XP System
+• Chat: 5-15 XP
+• Voice: 20 XP / phút
+• Cooldown: 10s
 `);
 
-    }
+}
 
     if(cmd === "top"){
 
