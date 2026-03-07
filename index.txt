@@ -121,10 +121,8 @@ async function initDB() {
       )
     `);
 
-    // DÒNG FIX LỖI: Ép thêm cột prefix nếu bảng cũ chưa có
     await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS prefix TEXT DEFAULT 'lvl!';`).catch(() => {});
 
-    // Tạo bảng Túi Đồ (Inventory)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS inventory (
         id SERIAL PRIMARY KEY,
@@ -150,7 +148,6 @@ async function initDB() {
       )
     `);
     
-    // Tải toàn bộ prefix lên cache
     const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
     prefixes.rows.forEach(r => guildPrefixCache.set(r.guildid, r.prefix));
 
@@ -176,7 +173,6 @@ async function saveLevel(id, data) {
   );
 }
 
-// Lấy tổng buff từ đồ đang mặc
 async function getEquipBuffs(userid) {
   const res = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND is_equipped=true", [userid]);
   let buffs = { xp: 0, jpChance: 0, jpMoney: 0, gamble: 0 };
@@ -189,7 +185,6 @@ async function getEquipBuffs(userid) {
   return buffs;
 }
 
-// ===== ANIME SEARCH (Dành cho AI Bot) =====
 async function getAnimeGif(tag) {
   try {
     const res = await axios.get(`https://nekos.best/api/v2/${tag}`);
@@ -203,9 +198,7 @@ async function getAnimeGif(tag) {
 async function startSystem() {
   await initDB();
 
-  // ==========================================
-  // ===== 1. KHỞI ĐỘNG CÁC BOT AI ============
-  // ==========================================
+  // 1. KHỞI ĐỘNG CÁC BOT AI
   bots.forEach(config => {
     const client = new Client({
       intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -344,9 +337,7 @@ async function startSystem() {
     client.login(config.token);
   });
 
-  // ==========================================
-  // ===== 2. KHỞI ĐỘNG LEVEL BOT =============
-  // ==========================================
+  // 2. KHỞI ĐỘNG LEVEL BOT
   const levelBot = new Client({
     intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent ]
   });
@@ -360,7 +351,6 @@ async function startSystem() {
     const now = Date.now();
     const content = message.content.trim();
 
-    // CHẶN: Nếu nhắn cho AI Bot thì Level Bot bỏ qua
     if (content.startsWith("^") || content.startsWith("!!")) return;
 
     const prefix = await getPrefix(message.guild.id);
@@ -370,22 +360,20 @@ async function startSystem() {
       const args = content.slice(prefix.length).trim().split(/ +/);
       const cmd = args.shift().toLowerCase();
 
-      // 0. Lệnh Help (Mới thêm)
       if (cmd === "help") {
         const helpEmbed = new EmbedBuilder()
           .setTitle("📚 Danh Sách Lệnh Level Bot")
           .setColor("#5865F2")
           .setDescription(`Prefix hiện tại của server là: **${prefix}**`)
           .addFields(
-            { name: "🏆 Cày Cấp & Tiền", value: `\`${prefix}rank\` - Xem rank & tiến trình XP\n\`${prefix}top\` - Bảng xếp hạng server\n\`${prefix}daily\` - Điểm danh nhận Kcoin mỗi 24h\n\`${prefix}cf <tiền>\` - Chơi tung đồng xu (50/50)` },
-            { name: "🛍️ Shop & Gacha", value: `\`${prefix}shop\` - Xem cửa hàng\n\`${prefix}buy <mã>\` - Mua rương/vật phẩm\n\`${prefix}inv\` - Xem túi đồ của bạn\n\`${prefix}use <stt> [số lượng]\` - Mở rương gacha\n\`${prefix}equip <stt>\` - Mặc/tháo trang bị buff\n\`${prefix}giveitem @user <stt>\` - Tặng trang bị/rương cho người khác\n\`${prefix}pay @user <số tiền>\` - Chuyển Kcoin` },
-            { name: "⚙️ Cài đặt (Admin)", value: `\`${prefix}prefix <ký tự mới>\` - Đổi prefix bot cho server\n\`${prefix}setchannel\` - Đặt kênh thông báo thăng cấp hiện tại` }
+            { name: "🏆 Cày Cấp & Tiền", value: `\`${prefix}profile\` - Xem hồ sơ & hạng\n\`${prefix}cash\` - Xem tiền\n\`${prefix}top\` - Bảng xếp hạng\n\`${prefix}daily\` - Nhận thưởng mỗi 24h\n\`${prefix}cf <tiền>\` - Chơi tung đồng xu (50/50)` },
+            { name: "🛍️ Shop & Gacha", value: `\`${prefix}shop\` - Xem cửa hàng\n\`${prefix}buy <mã>\` - Mua vật phẩm\n\`${prefix}inv\` - Xem túi đồ\n\`${prefix}use <stt> [SL]\` - Mở rương gacha\n\`${prefix}equip <stt>\` - Mặc/tháo đồ\n\`${prefix}giveitem @user <stt>\` - Tặng đồ\n\`${prefix}pay @user <tiền>\` - Chuyển Kcoin` },
+            { name: "⚙️ Cài đặt", value: `\`${prefix}prefix <ký tự mới>\` - Đổi prefix\n\`${prefix}setchannel\` - Đặt kênh báo level` }
           )
           .setFooter({ text: "Tip: Chat hoặc treo Voice đều được nhận ngẫu nhiên XP & Kcoin nhé!" });
         return message.reply({ embeds: [helpEmbed] });
       }
 
-      // 1. Lệnh Đổi Prefix (Admin)
       if (cmd === "prefix") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return message.reply("❌ Cần quyền Quản lý Server.");
         const newPrefix = args[0];
@@ -399,7 +387,6 @@ async function startSystem() {
         return message.reply(`✅ Đã đổi prefix thành: **${newPrefix}**`);
       }
 
-      // 2. Lệnh Cài Kênh
       if (cmd === "channel" || cmd === "setchannel") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return message.reply("❌ Cần quyền Manage Guild.");
         const channel = message.mentions.channels.first() || message.channel;
@@ -407,7 +394,6 @@ async function startSystem() {
         return message.reply(`✅ Đã đặt kênh thông báo tại: ${channel}`);
       }
 
-      // 3. Lệnh Cửa Hàng Gacha (Shop)
       if (cmd === "shop") {
         const shopEmbed = new EmbedBuilder()
           .setTitle("🛒 Cửa Hàng Kcoin & Gacha")
@@ -422,7 +408,6 @@ async function startSystem() {
         return message.reply({ embeds: [shopEmbed] });
       }
 
-      // 4. Lệnh Mua (Buy)
       if (cmd === "buy") {
         const data = await getLevel(id);
         const itemCode = args[0]?.toLowerCase();
@@ -453,7 +438,6 @@ async function startSystem() {
         }
       }
 
-      // 5. Lệnh Xem Túi Đồ (Inventory)
       if (cmd === "inv" || cmd === "inventory") {
         const invData = await pool.query("SELECT * FROM inventory WHERE userid=$1 ORDER BY item_type ASC, id ASC", [id]);
         if (invData.rows.length === 0) return message.reply("🎒 Túi đồ của bạn trống rỗng.");
@@ -484,7 +468,6 @@ async function startSystem() {
         return message.reply({ embeds: [embed] });
       }
 
-      // 6. Lệnh Mở Rương (Use)
       if (cmd === "use") {
         const index = parseInt(args[0]) - 1;
         const amount = parseInt(args[1]) || 1;
@@ -548,7 +531,6 @@ async function startSystem() {
         return message.reply(`🎉 Bạn đã mở **${amount} ${targetItem.item_name}** và nhận được:\n${openedText}`);
       }
 
-      // 7. Lệnh Mặc Đồ (Equip/Unequip)
       if (cmd === "equip") {
         const index = parseInt(args[0]) - 1;
         if (isNaN(index) || index < 0) return message.reply(`❌ Dùng: \`${prefix}equip <STT_Trong_Túi>\``);
@@ -568,7 +550,6 @@ async function startSystem() {
         return message.reply(`⚔️ Đã trang bị **${targetItem.item_name}**!`);
       }
 
-      // 8. Lệnh Tặng Đồ (Give Item)
       if (cmd === "giveitem") { 
         const targetUser = message.mentions.users.first();
         const index = parseInt(args[1]) - 1;
@@ -596,10 +577,25 @@ async function startSystem() {
         return message.reply(`🎁 Bạn đã tặng **${targetItem.item_name}** cho <@${targetUser.id}>.`);
       }
 
-      // 9. Lệnh Cơ Bản Khác (Rank, CF, Trade...)
-      if (cmd === "rank") {
+      // ==========================================
+      // LỆNH MỚI: CASH (Kiểm tra tiền)
+      // ==========================================
+      if (cmd === "cash" || cmd === "bal" || cmd === "balance" || cmd === "money") {
         const data = await getLevel(id);
+        const embed = new EmbedBuilder()
+          .setColor("#FFD700")
+          .setDescription(`💰 **${message.author.username}**, bạn đang có **${data.kcoin.toLocaleString()} Kcoin** trong ví.`);
+        return message.reply({ embeds: [embed] });
+      }
+
+      // ==========================================
+      // LỆNH ĐƯỢC GỘP: PROFILE / RANK
+      // ==========================================
+      if (cmd === "rank" || cmd === "profile" || cmd === "info") {
+        const data = await getLevel(id);
+        const buffs = await getEquipBuffs(id);
         const isBoosted = data.boost_until > now;
+        
         const remainWeek = xpNeeded(data.lvl_week) - data.xp_week;
         const remainMonth = xpNeeded(data.lvl_month) - data.xp_month;
         const remainYear = xpNeeded(data.lvl_year) - data.xp_year;
@@ -607,14 +603,23 @@ async function startSystem() {
         const progress = Math.min(Math.floor((data.xp_year / xpNeeded(data.lvl_year)) * 10), 10);
         const progressBar = "▰".repeat(progress) + "▱".repeat(10 - progress);
 
+        // Hiển thị Buff nếu có
+        let buffText = "Không có";
+        if (buffs.xp > 0 || buffs.gamble > 0 || buffs.jpChance > 0) {
+          buffText = `+${buffs.xp}% XP | +${buffs.gamble}% Cờ bạc | +${buffs.jpChance}% Tỉ lệ JP`;
+        }
+
         const rankEmbed = new EmbedBuilder()
           .setColor(isBoosted ? "#F1C40F" : "#5865F2") 
-          .setTitle(`📊 THỨ HẠNG CỦA ${message.author.username.toUpperCase()}`)
+          .setTitle(`👤 HỒ SƠ CỦA ${message.author.username.toUpperCase()}`)
           .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 256 }))
           .addFields(
-            { name: "📅 Thống kê tuần", value: `**Cấp:** \`${data.lvl_week}\`\n**XP:** \`${data.xp_week.toLocaleString()}\` / \`${xpNeeded(data.lvl_week).toLocaleString()}\``, inline: true },
-            { name: "🗓️ Thống kê tháng", value: `**Cấp:** \`${data.lvl_month}\`\n**XP:** \`${data.xp_month.toLocaleString()}\` / \`${xpNeeded(data.lvl_month).toLocaleString()}\``, inline: true },
-            { name: "📆 Thống kê năm (Chính)", value: `**Cấp:** \`${data.lvl_year}\`\n**Tiến trình:** \`[${progressBar}]\` (\`${Math.round((data.xp_year / xpNeeded(data.lvl_year)) * 100)}%\`)\n**Cần thêm:** \`${remainYear.toLocaleString()} XP\``, inline: false }
+            { name: "💰 Tài sản", value: `**${data.kcoin.toLocaleString()} Kcoin**`, inline: true },
+            { name: "✨ Buff trang bị", value: `\`${buffText}\``, inline: true },
+            { name: "🚀 Boost Cấp Số Nhân", value: isBoosted ? `Đang bật (Còn ${formatTimeLeft(data.boost_until - now)})` : "Không có", inline: false },
+            { name: "📅 Cấp Tuần", value: `**Lv.${data.lvl_week}** (${data.xp_week.toLocaleString()}/${xpNeeded(data.lvl_week).toLocaleString()} XP)`, inline: true },
+            { name: "🗓️ Cấp Tháng", value: `**Lv.${data.lvl_month}** (${data.xp_month.toLocaleString()}/${xpNeeded(data.lvl_month).toLocaleString()} XP)`, inline: true },
+            { name: "📆 Cấp Năm (Chính)", value: `**Lv.${data.lvl_year}**\n\`[${progressBar}]\` (${Math.round((data.xp_year / xpNeeded(data.lvl_year)) * 100)}%)\n*Cần thêm: ${remainYear.toLocaleString()} XP*`, inline: false }
           );
         return message.reply({ embeds: [rankEmbed] });
       }
@@ -637,12 +642,12 @@ async function startSystem() {
         return message.reply(isJackpot ? `🎉 **JACKPOT ĐIÊN RỒ!!!** Bạn trúng **10,000 Kcoin**!` : `🎁 Điểm danh hằng ngày: **+${kcoinEarned} Kcoin**!`);
       }
 
-      if (cmd === "cf") {
+      if (cmd === "cf" || cmd === "coinflip") {
         const bet = parseInt(args[0]);
         if (!bet || bet <= 0 || bet > 1000) return message.reply(`❌ Cược từ 1 - 1000 Kcoin. Dùng: \`${prefix}cf <tiền>\``);
 
         const data = await getLevel(id);
-        if (data.kcoin < bet) return message.reply(`❌ Ví bạn chỉ có **${data.kcoin} Kcoin**.`);
+        if (data.kcoin < bet) return message.reply(`❌ Ví bạn chỉ có **${data.kcoin.toLocaleString()} Kcoin**.`);
 
         const buffs = await getEquipBuffs(id);
         const winMultiplier = 1 + (buffs.gamble / 100); 
@@ -652,18 +657,18 @@ async function startSystem() {
           const winAmount = Math.floor(bet * winMultiplier);
           data.kcoin += winAmount;
           await saveLevel(id, data);
-          return message.reply(`🪙 Ngửa! Thắng **${winAmount + bet} Kcoin** (Lời ${winAmount} - Tính cả buff ${buffs.gamble}%).`);
+          return message.reply(`🪙 Ngửa! Thắng **${(winAmount + bet).toLocaleString()} Kcoin** (Lời ${winAmount} - Tính cả buff ${buffs.gamble}%).`);
         } else {
           data.kcoin -= bet;
           await saveLevel(id, data);
-          return message.reply(`🪙 Sấp! Thua **${bet} Kcoin**.`);
+          return message.reply(`🪙 Sấp! Thua **${bet.toLocaleString()} Kcoin**.`);
         }
       }
 
-      if (cmd === "give" || cmd === "pay") {
+      if (cmd === "give" || cmd === "pay" || cmd === "transfer") {
         const targetUser = message.mentions.users.first();
         const amount = parseInt(args[1]);
-        if (!targetUser || !amount || amount <= 0 || targetUser.bot || targetUser.id === id) return message.reply(`❌ Dùng: \`${prefix}give @user <số_tiền>\``);
+        if (!targetUser || !amount || amount <= 0 || targetUser.bot || targetUser.id === id) return message.reply(`❌ Dùng: \`${prefix}pay @user <số_tiền>\``);
 
         const senderData = await getLevel(id);
         if (senderData.kcoin < amount) return message.reply("❌ Không đủ tiền!");
@@ -674,10 +679,10 @@ async function startSystem() {
 
         await saveLevel(id, senderData);
         await saveLevel(targetUser.id, receiverData);
-        return message.reply(`💸 Chuyển thành công **${amount} Kcoin** cho <@${targetUser.id}>.`);
+        return message.reply(`💸 Chuyển thành công **${amount.toLocaleString()} Kcoin** cho <@${targetUser.id}>.`);
       }
 
-      if (cmd === "top") {
+      if (cmd === "top" || cmd === "lb") {
         const topEmbed = new EmbedBuilder().setTitle("🏆 BẢNG XẾP HẠNG").setColor("#ffd700");
         const buildTopText = async (rows, type) => {
           if (rows.length === 0) return "Chưa có ai.";
@@ -705,10 +710,10 @@ async function startSystem() {
         return message.reply({ embeds: [topEmbed] });
       }
 
-      return; // Dừng nếu là lệnh
+      return; // Dừng xử lý nếu đã dính vào block lệnh
     }
 
-    // --- PHẦN B: CỘNG XP KHI CHAT TỰ ĐỘNG ---
+    // --- PHẦN B: CỘNG XP KHI CHAT TỰ ĐỘNG (Phần code bạn bị đứt đã được nối liền) ---
     if (content.length < 5) return;
     if (cooldown.has(id) && cooldown.get(id) > now) return; 
     
