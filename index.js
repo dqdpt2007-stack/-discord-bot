@@ -169,8 +169,19 @@ async function startSystem() {
         return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${action}${gif ? "\n" + gif : ""}`);
       }
 
+      // Đóng khung lệnh Help của AI Bot
       if (content === prefix + "help") {
-        return message.reply(`📜 Lệnh của bot\n${prefix}hi\n${prefix}sleep\n${prefix}love\n${prefix}hug\n${prefix}pat\n${prefix}kiss\n${prefix}blush\n${prefix}hand\n${prefix}rep <id> <text>\n${prefix}ai <text>`);
+        const helpEmbed = new EmbedBuilder()
+          .setTitle("📜 Danh Sách Lệnh AI Bot")
+          .setColor("#00BFFF")
+          .setDescription(`Dưới đây là các lệnh bạn có thể sử dụng (Prefix: **${prefix}**):`)
+          .addFields(
+            { name: "💬 Giao tiếp cơ bản", value: `\`${prefix}hi\` - Chào bot\n\`${prefix}sleep\` - Chúc bot ngủ ngon\n\`${prefix}love\` - Đo độ thiện cảm`, inline: false },
+            { name: "🫂 Hành động (Có ảnh GIF)", value: `\`${prefix}hug\` - Ôm\n\`${prefix}pat\` - Xoa đầu\n\`${prefix}kiss\` - Hôn\n\`${prefix}blush\` - Ngại ngùng\n\`${prefix}hand\` - Nắm tay`, inline: false },
+            { name: "🤖 Tính năng AI", value: `\`${prefix}ai <nội dung>\` - Chat với AI\n\`${prefix}rep <id tin nhắn> <nội dung>\` - Nhờ bot reply tin nhắn`, inline: false }
+          )
+          .setFooter({ text: "Bot Tương Tác & Trí Tuệ Nhân Tạo" });
+        return message.reply({ embeds: [helpEmbed] });
       }
 
       if (content.startsWith(prefix + "ai ")) {
@@ -263,6 +274,7 @@ async function startSystem() {
       const args = content.slice(LEVEL_PREFIX.length).trim().split(/ +/);
       const cmd = args[0];
 
+      // ===== PROFILE & RANK =====
       if (cmd === "profile" || cmd === "rank") {
         const data = await getLevel(id);
         if (!data) return message.reply("Lỗi lấy dữ liệu.");
@@ -278,11 +290,13 @@ async function startSystem() {
         const rewards = await pool.query("SELECT reward FROM rewards WHERE userid=$1", [id]);
         let rewardText = rewards.rows.length > 0 ? rewards.rows.map(r => "🏆 " + r.reward).join("\n") : "None";
 
-        const profileText = `👤 <@${id}>\n\n📅 Week: Lv ${data.lvl_week} (${data.xp_week}/${needWeek})\n🗓 Month: Lv ${data.lvl_month} (${data.xp_month}/${needMonth})\n📆 Year: Lv ${data.lvl_year} (${data.xp_year}/${needYear})\n\n🏅 Thành tích:\n${rewardText}`;
+        // Tắt ping ở Profile, chỉ hiện Username
+        const profileText = `👤 **${message.author.username}**\n\n📅 Week: Lv ${data.lvl_week} (${data.xp_week}/${needWeek})\n🗓 Month: Lv ${data.lvl_month} (${data.xp_month}/${needMonth})\n📆 Year: Lv ${data.lvl_year} (${data.xp_year}/${needYear})\n\n🏅 Thành tích:\n${rewardText}`;
         const embed = new EmbedBuilder().setTitle("📊 PROFILE").setDescription(profileText).setColor("#ff66cc");
         return message.reply({ embeds: [embed] });
       }
 
+      // ===== REWARD =====
       if (cmd === "reward") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return;
         const user = message.mentions.users.first();
@@ -292,15 +306,53 @@ async function startSystem() {
         return message.reply("🏆 Đã thêm thành tích");
       }
 
+      // ===== TOP (ĐÃ NÂNG CẤP) =====
       if (cmd === "top") {
-        const res = await pool.query("SELECT * FROM levels ORDER BY lvl_year DESC, xp_year DESC LIMIT 10");
-        let text = "🏆 Leaderboard\n";
-        res.rows.forEach((user, i) => {
-          text += `${i + 1}. <@${user.userid}> - Lv.${user.lvl_year}\n`;
-        });
-        return message.reply(text);
+        const topEmbed = new EmbedBuilder()
+          .setTitle("🏆 BẢNG XẾP HẠNG (LEADERBOARD)")
+          .setColor("#ffd700")
+          .setFooter({ text: "Cập nhật liên tục từ Database" });
+
+        // Hàm phụ giúp tạo danh sách và tìm tên người dùng
+        const buildTopText = async (rows, type) => {
+          if (rows.length === 0) return "Chưa có ai.";
+          let text = "";
+          for (let i = 0; i < rows.length; i++) {
+            const user = rows[i];
+            let username = "Unknown";
+            try {
+              // Tìm user để lấy tên thay vì ping
+              const fetchedUser = await levelBot.users.fetch(user.userid);
+              username = fetchedUser.username;
+            } catch (e) {}
+            
+            const lvl = user[`lvl_${type}`];
+            text += `**${i + 1}.** ${username} - Lv.${lvl}\n`;
+          }
+          return text;
+        };
+
+        // Lấy dữ liệu 3 bảng song song
+        const resWeek = await pool.query("SELECT * FROM levels ORDER BY lvl_week DESC, xp_week DESC LIMIT 10");
+        const resMonth = await pool.query("SELECT * FROM levels ORDER BY lvl_month DESC, xp_month DESC LIMIT 10");
+        const resYear = await pool.query("SELECT * FROM levels ORDER BY lvl_year DESC, xp_year DESC LIMIT 10");
+
+        // Tạo chuỗi hiển thị
+        const textWeek = await buildTopText(resWeek.rows, "week");
+        const textMonth = await buildTopText(resMonth.rows, "month");
+        const textYear = await buildTopText(resYear.rows, "year");
+
+        // Thêm vào Embed
+        topEmbed.addFields(
+          { name: "📅 TOP TUẦN", value: textWeek, inline: true },
+          { name: "🗓️ TOP THÁNG", value: textMonth, inline: true },
+          { name: "📆 TOP NĂM", value: textYear, inline: true }
+        );
+
+        return message.reply({ embeds: [topEmbed] });
       }
 
+      // ===== RESET =====
       if (cmd === "reset") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return message.reply("❌ Mod only");
         const type = args[1];
@@ -309,8 +361,18 @@ async function startSystem() {
         if (type === "year") { await pool.query("UPDATE levels SET xp_year=0,lvl_year=1"); return message.reply("🔄 Reset năm"); }
       }
       
+      // Đóng khung lệnh Help của Level Bot
       if (cmd === "help") {
-        return message.reply(`📊 Level Bot Commands\nlvl!rank\nlvl!profile\nlvl!top\nlvl!reset week/month/year\nlvl!reward @user <text>`);
+        const lvlHelpEmbed = new EmbedBuilder()
+          .setTitle("📈 Danh Sách Lệnh Level Bot")
+          .setColor("#32CD32")
+          .setDescription(`Prefix của bot cấp độ là: **${LEVEL_PREFIX}**`)
+          .addFields(
+            { name: "👤 Người chơi", value: `\`${LEVEL_PREFIX}rank\` - Xem cấp độ hiện tại (rút gọn)\n\`${LEVEL_PREFIX}profile\` - Xem hồ sơ chi tiết và thành tích\n\`${LEVEL_PREFIX}top\` - Xem bảng xếp hạng`, inline: false },
+            { name: "🛡️ Quản trị viên (Mod)", value: `\`${LEVEL_PREFIX}reward @user <tên giải>\` - Thêm giải thưởng vào profile\n\`${LEVEL_PREFIX}reset <week/month/year>\` - Làm mới bảng xếp hạng`, inline: false }
+          )
+          .setFooter({ text: "Hệ thống Level & Tương Tác" });
+        return message.reply({ embeds: [lvlHelpEmbed] });
       }
     }
 
@@ -332,7 +394,7 @@ async function startSystem() {
     await saveLevel(id, data);
   });
 
-  // 4. Voice XP (Đã sửa lỗi an toàn cho Database)
+  // 4. Voice XP
   setInterval(async () => {
     for (const guild of levelBot.guilds.cache.values()) {
       for (const channel of guild.channels.cache.values()) {
