@@ -665,10 +665,14 @@ async function startSystem() {
         }
       }
 
-      if (cmd === "give" || cmd === "pay" || cmd === "transfer") {
+      if (cmd === "give") {
         const targetUser = message.mentions.users.first();
         const amount = parseInt(args[1]);
-        if (!targetUser || !amount || amount <= 0 || targetUser.bot || targetUser.id === id) return message.reply(`❌ Dùng: \`${prefix}pay @user <số_tiền>\``);
+        
+        // Đã sửa lại thông báo lỗi thành ${prefix}give thay vì pay
+        if (!targetUser || !amount || amount <= 0 || targetUser.bot || targetUser.id === id) {
+            return message.reply(`❌ Dùng: \`${prefix}give @user <số_tiền>\``);
+        }
 
         const senderData = await getLevel(id);
         if (senderData.kcoin < amount) return message.reply("❌ Không đủ tiền!");
