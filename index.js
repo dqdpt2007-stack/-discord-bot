@@ -17,8 +17,6 @@ if (!process.env.GROQ_API_KEY) {
 }
 
 // ===== DATABASE CONFIG =====
-// Lưu ý: Trên nền tảng hosting (Railway/Render...), bạn tạo biến môi trường tên là DATABASE_URL 
-// và gán giá trị ${{ Postgres.DATABASE_URL }} như hệ thống yêu cầu nhé. Code sẽ tự động nhận ở đây.
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -61,8 +59,10 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 const LEVEL_PREFIX = "lvl!";
 const LEVEL_TOKEN = process.env.DISCORD_TOKEN_LVL;
 
+// ===== CÔNG THỨC XP MỚI (Mũ 1.5 & Làm tròn chục) =====
 function xpNeeded(level) {
-  return 50 * level * level + 50 * level;
+  const rawXp = 50 * Math.pow(level, 1.5) + 50 * level;
+  return Math.round(rawXp / 10) * 10;
 }
 
 // ===== DATABASE FUNCTIONS =====
@@ -156,7 +156,7 @@ async function startSystem() {
       if (content === prefix + "hi") return message.reply("Anh chào em nha");
       if (content === prefix + "sleep") return message.reply("Ngủ ngon nha bé ngoan của anh");
 
-      // Nâng cấp lệnh Love (Có AI, Đóng Khung, Che link GIF)
+      // Lệnh Love (Có AI, Đóng Khung, Che link GIF)
       if (content === prefix + "love") {
         const percent = Math.floor(Math.random() * 101);
         let action = "", gifTag = null;
@@ -248,7 +248,7 @@ async function startSystem() {
             const interactEmbed = new EmbedBuilder()
               .setDescription(chat.choices[0].message.content)
               .setColor("#ffcc99")
-              .setImage(gif); // Nhúng thẳng ảnh vào Embed
+              .setImage(gif);
 
             return message.reply({ embeds: [interactEmbed] });
           } catch(e) {
@@ -304,6 +304,13 @@ async function startSystem() {
     if (content.startsWith(LEVEL_PREFIX)) {
       const args = content.slice(LEVEL_PREFIX.length).trim().split(/ +/);
       const cmd = args[0];
+
+      // Lệnh test hệ thống làm tròn XP
+      if (cmd === "check") {
+        const checkLvl = parseInt(args[1]);
+        if (!checkLvl || isNaN(checkLvl)) return message.reply("Vui lòng nhập số level. VD: `lvl!check 10`");
+        return message.reply(`Để đạt Level **${checkLvl}**, người chơi cần **${xpNeeded(checkLvl)} XP** (làm tròn chục).`);
+      }
 
       if (cmd === "profile" || cmd === "rank") {
         const data = await getLevel(id);
@@ -388,7 +395,7 @@ async function startSystem() {
           .setColor("#32CD32")
           .setDescription(`Prefix của bot cấp độ là: **${LEVEL_PREFIX}**`)
           .addFields(
-            { name: "👤 Người chơi", value: `\`${LEVEL_PREFIX}rank\` - Xem cấp độ hiện tại (rút gọn)\n\`${LEVEL_PREFIX}profile\` - Xem hồ sơ chi tiết và thành tích\n\`${LEVEL_PREFIX}top\` - Xem bảng xếp hạng`, inline: false },
+            { name: "👤 Người chơi", value: `\`${LEVEL_PREFIX}rank\` - Xem cấp độ hiện tại (rút gọn)\n\`${LEVEL_PREFIX}profile\` - Xem hồ sơ chi tiết và thành tích\n\`${LEVEL_PREFIX}top\` - Xem bảng xếp hạng\n\`${LEVEL_PREFIX}check <level>\` - Kiểm tra số XP để đạt cấp độ`, inline: false },
             { name: "🛡️ Quản trị viên (Mod)", value: `\`${LEVEL_PREFIX}reward @user <tên giải>\` - Thêm giải thưởng vào profile\n\`${LEVEL_PREFIX}reset <week/month/year>\` - Làm mới bảng xếp hạng`, inline: false }
           )
           .setFooter({ text: "Hệ thống Level & Tương Tác" });
@@ -397,18 +404,22 @@ async function startSystem() {
     }
 
     if (content.length < 5) return;
+    
+    // Cập nhật XP Chat: Random 10 - 100 XP, Cooldown 15s
     if (cooldown.has(id) && cooldown.get(id) > Date.now()) return;
-
-    cooldown.set(id, Date.now() + 15000);
-    const xp = Math.floor(Math.random() * 8) + 5;
+    cooldown.set(id, Date.now() + 15000); 
+    
+    const xp = Math.floor(Math.random() * 91) + 10; 
+    
     const data = await getLevel(id);
     if (!data) return;
 
     data.xp_week += xp; data.xp_month += xp; data.xp_year += xp;
 
-    if (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
-    if (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
-    if (data.xp_year >= xpNeeded(data.lvl_year)) { data.xp_year -= xpNeeded(data.lvl_year); data.lvl_year++; }
+    // Logic lên cấp (Dùng while thay cho if để đảm bảo chính xác nếu XP quá lớn)
+    while (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
+    while (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
+    while (data.xp_year >= xpNeeded(data.lvl_year)) { data.xp_year -= xpNeeded(data.lvl_year); data.lvl_year++; }
 
     await saveLevel(id, data);
   });
@@ -426,12 +437,15 @@ async function startSystem() {
           const data = await getLevel(id);
           if (!data) continue;
 
-          data.xp_week += 10; data.xp_month += 10; data.xp_year += 10;
+          // Cập nhật XP Voice: Random 50 - 120 XP mỗi 1 phút
+          const voiceXp = Math.floor(Math.random() * 71) + 50;
 
-          if (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
-          if (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
+          data.xp_week += voiceXp; data.xp_month += voiceXp; data.xp_year += voiceXp;
+
+          while (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
+          while (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
           
-          if (data.xp_year >= xpNeeded(data.lvl_year)) {
+          while (data.xp_year >= xpNeeded(data.lvl_year)) {
             data.xp_year -= xpNeeded(data.lvl_year);
             data.lvl_year++;
             if (guild.systemChannel) {
@@ -442,7 +456,7 @@ async function startSystem() {
         }
       }
     }
-  }, 60000);
+  }, 60000); // 60.000 ms = 1 phút
 
   levelBot.login(LEVEL_TOKEN);
 }
