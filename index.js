@@ -121,6 +121,9 @@ async function initDB() {
       )
     `);
 
+    // DÒNG FIX LỖI: Ép thêm cột prefix nếu bảng cũ chưa có
+    await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS prefix TEXT DEFAULT 'lvl!';`).catch(() => {});
+
     // Tạo bảng Túi Đồ (Inventory)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS inventory (
@@ -719,86 +722,117 @@ async function startSystem() {
     data.xp_month += finalXp; 
     data.xp_year += finalXp;
 
-    // Kcoin & Jackpot khi Chat (Tính buff đồ)
-    let kcoinEarned = (Math.floor(Math.random() * 2) + 1) * baseMult; 
-    let jpChance = (isBoosted ? 0.02 : 0.01) + (buffs.jpChance / 100);
+    // Kiểm tra và lên cấp (Level Up) cho Tuần, Tháng, Năm
+    let leveledUp = false;
+    let rankMsg = "";
 
+    // Check Tuần
+    if (data.xp_week >= xpNeeded(data.lvl_week)) {
+      data.xp_week -= xpNeeded(data.lvl_week);
+      data.lvl_week++;
+      leveledUp = true;
+      rankMsg += `\n**Tuần:** Cấp ${data.lvl_week}`;
+    }
+
+    // Check Tháng
+    if (data.xp_month >= xpNeeded(data.lvl_month)) {
+      data.xp_month -= xpNeeded(data.lvl_month);
+      data.lvl_month++;
+      leveledUp = true;
+      rankMsg += `\n**Tháng:** Cấp ${data.lvl_month}`;
+    }
+
+    // Check Năm
+    if (data.xp_year >= xpNeeded(data.lvl_year)) {
+      data.xp_year -= xpNeeded(data.lvl_year);
+      data.lvl_year++;
+      leveledUp = true;
+      rankMsg += `\n**Năm:** Cấp ${data.lvl_year}`;
+    }
+
+    // Thưởng Kcoin ngẫu nhiên khi chat (Có tính Buff của trang bị)
+    const baseKcoinDrop = Math.floor(Math.random() * 20) + 1; 
+    let kcoinMultiplier = baseMult; // Boost thuốc x2
+    let finalKcoinDrop = Math.floor(baseKcoinDrop * kcoinMultiplier);
+    
+    // Tỷ lệ rớt Jackpot (có tính Buff của trang bị)
+    const jpChance = 0.001 * (1 + (buffs.jpChance / 100));
     if (Math.random() < jpChance) {
-      const extraJp = 100 + buffs.jpMoney;
-      kcoinEarned += extraJp;
-      const jpEmbed = new EmbedBuilder().setColor("#FFD700").setDescription(`🎲 **Jackpot!** <@${id}> nhặt được **${extraJp} Kcoin** nhờ trang bị xịn!`);
+      const jpReward = 5000 + buffs.jpMoney; // Thưởng JP cơ bản + Buff tiền JP
+      finalKcoinDrop += jpReward;
+      
+      const jpEmbed = new EmbedBuilder()
+        .setTitle("🎰 JACKPOT BẤT NGỜ!")
+        .setDescription(`Chúc mừng <@${id}> đã trúng mánh khi đang chat và nhận được **${jpReward.toLocaleString()} Kcoin**!`)
+        .setColor("#FFD700");
       await sendLvlNotify(message.guild, jpEmbed);
     }
-    data.kcoin += kcoinEarned;
 
-    // Kiểm tra lên cấp
-    let leveledUp = false;
-    while (data.xp_year >= xpNeeded(data.lvl_year)) { 
-      data.xp_year -= xpNeeded(data.lvl_year); 
-      data.lvl_year++; 
-      leveledUp = true; 
-    }
-    while (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
-    while (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
+    data.kcoin += finalKcoinDrop;
 
+    // Lưu dữ liệu vào Database
+    await saveLevel(id, data);
+
+    // Gửi thông báo nếu có lên cấp
     if (leveledUp) {
-      const upEmbed = new EmbedBuilder().setColor("#00FF00").setDescription(`🎉 Chúc mừng <@${id}> đã thăng cấp **Level ${data.lvl_year}**!`);
+      const upEmbed = new EmbedBuilder()
+        .setTitle("🎉 LÊN CẤP!")
+        .setDescription(`Chúc mừng <@${id}> đã thăng cấp!${rankMsg}`)
+        .setColor("#00FF00")
+        .setThumbnail(message.author.displayAvatarURL({ dynamic: true }));
       await sendLvlNotify(message.guild, upEmbed);
     }
-
-    await saveLevel(id, data);
   });
 
-  // --- PHẦN C: VOICE XP & KCOIN ---
-  setInterval(async () => {
-    const now = Date.now();
-    for (const guild of levelBot.guilds.cache.values()) {
-      for (const channel of guild.channels.cache.values()) {
-        if (!channel.isVoiceBased()) continue;
-        
-        for (const member of channel.members.values()) {
-          if (member.user.bot || member.voice.selfMute) continue; 
+  // --- PHẦN C: CỘNG XP KHI TREO VOICE ---
+  const voiceTimers = new Map();
 
-          const data = await getLevel(member.id);
-          const buffs = await getEquipBuffs(member.id);
-          const isBoosted = data.boost_until > now;
+  levelBot.on("voiceStateUpdate", (oldState, newState) => {
+    const userId = newState.id;
 
+    // Người dùng tham gia kênh Voice (chưa bị mute/deaf)
+    if (!oldState.channelId && newState.channelId && !newState.selfDeaf && !newState.serverDeaf) {
+      if (voiceTimers.has(userId)) clearInterval(voiceTimers.get(userId));
+      
+      const timer = setInterval(async () => {
+        try {
+          const data = await getLevel(userId);
+          const buffs = await getEquipBuffs(userId);
+          const isBoosted = data.boost_until > Date.now();
+          
           const baseMult = isBoosted ? 2 : 1;
           const xpMultiplier = baseMult * (1 + (buffs.xp / 100));
+          
+          // Treo voice được nhận nhiều XP hơn chat (ví dụ 50 - 100 XP mỗi 5 phút)
+          const voiceXp = Math.floor((Math.floor(Math.random() * 51) + 50) * xpMultiplier);
+          
+          data.xp_week += voiceXp;
+          data.xp_month += voiceXp;
+          data.xp_year += voiceXp;
+          
+          // Thưởng chút Kcoin treo máy
+          data.kcoin += Math.floor(10 * baseMult);
 
-          data.xp_year += Math.floor((Math.floor(Math.random() * 71) + 50) * xpMultiplier);
-          let kcoinEarned = (Math.floor(Math.random() * 4) + 2) * baseMult;
-
-          let jpChance = (isBoosted ? 0.02 : 0.01) + (buffs.jpChance / 100);
-          if (Math.random() < jpChance) {
-            const extraJp = 100 + buffs.jpMoney;
-            kcoinEarned += extraJp;
-            const jpVoiceEmbed = new EmbedBuilder().setColor("#FFD700").setDescription(`🎲 **Voice Jackpot!** <@${member.id}> treo mic nhặt được **${extraJp} Kcoin**!`);
-            await sendLvlNotify(guild, jpVoiceEmbed);
-          }
-          data.kcoin += kcoinEarned;
-
-          let voiceUp = false;
-          while (data.xp_year >= xpNeeded(data.lvl_year)) {
-            data.xp_year -= xpNeeded(data.lvl_year);
-            data.lvl_year++;
-            voiceUp = true;
-          }
-          while (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
-          while (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
-
-          if (voiceUp) {
-            const vEmbed = new EmbedBuilder().setColor("#0099ff").setDescription(`🎙️ <@${member.id}> lên **Level ${data.lvl_year}** nhờ cắm Voice!`);
-            await sendLvlNotify(guild, vEmbed);
-          }
-
-          await saveLevel(member.id, data);
+          await saveLevel(userId, data);
+        } catch (err) {
+          console.error("Lỗi cộng XP Voice:", err);
         }
+      }, 300000); // 5 phút (300,000 ms) chạy 1 lần
+
+      voiceTimers.set(userId, timer);
+    }
+
+    // Người dùng rời kênh Voice hoặc bị Deaf/Mute
+    if ((oldState.channelId && !newState.channelId) || newState.selfDeaf || newState.serverDeaf) {
+      if (voiceTimers.has(userId)) {
+        clearInterval(voiceTimers.get(userId));
+        voiceTimers.delete(userId);
       }
     }
-  }, 60000); 
+  });
 
   levelBot.login(LEVEL_TOKEN);
 }
 
+// Chạy toàn bộ hệ thống
 startSystem();
