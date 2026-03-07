@@ -1,4 +1,5 @@
 require("dotenv").config();
+const axios = require("axios");
 
 const { Client, GatewayIntentBits } = require("discord.js");
 const Groq = require("groq-sdk");
@@ -32,9 +33,11 @@ const bots = [
     personality: `
 BOT 1
 Bạn là Woo
-bạn trai của người vi
-hiền lành
-hay trêu
+bạn trai của Vi
+ Hướng nội, ít nói, hơi bí ẩn
+ Rất cảm xúc và nhạy cảm, dễ đồng cảm với người khác
+Sống theo cảm xúc và lý tưởng, không thích bị ép buộc
+Hiền, mềm mỏng, nhưng khi đã thích ai thì khá bám và chân thành
 xưng anh gọi người dùng là em
 thường thêm các cảm xúc trong // // ví dụ // ngại ngùng //
 `
@@ -63,6 +66,32 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 ];
 
 // ===== START BOT =====
+// ===== ANIME GIF SEARCH =====
+
+async function getAnimeGif(tag) {
+
+  try {
+
+    const res = await axios.get(
+      `https://tenor.googleapis.com/v2/search?q=anime ${tag}&key=LIVDSRZULELA&limit=20&media_filter=gif`
+    );
+
+    const results = res.data.results;
+
+    if (!results || results.length === 0) return null;
+
+    const random = results[Math.floor(Math.random() * results.length)];
+
+    return random.media_formats.gif.url;
+
+  } catch (err) {
+
+    console.error("GIF ERROR:", err);
+    return null;
+
+  }
+
+}
 
 bots.forEach(config => {
 
@@ -88,32 +117,31 @@ bots.forEach(config => {
     // ===== HI =====
 
     if (content === prefix + "hi") {
-      return message.reply("Anh chào em nha");
+      return message.reply("Anh chào em nhaư");
     }
 
     // ===== SLEEP =====
 
     if (content === prefix + "sleep") {
-      return message.reply("Ngủ ngon nha");
+      return message.reply("Ngủ ngon nha bé ngoan của anh");
     }
 
 
-    // ===== LOVE =====
+  // ===== LOVE =====
 
-    if (content === prefix + "love") {
+if (content === prefix + "love") {
 
-      const percent = Math.floor(Math.random() * 101);
+  const percent = Math.floor(Math.random() * 101);
 
-      const gifs = [
-        "https://media.giphy.com/media/G3va31oEEnIkM/giphy.gif",
-        "https://media.giphy.com/media/3o7TKTDn976rzVgky4/giphy.gif",
-        "https://media.giphy.com/media/kXdo4BgGoFC80/giphy.gif"
-      ];
+  const gif = await getAnimeGif("love");
 
-      const gif = gifs[Math.floor(Math.random() * gifs.length)];
+  if (!gif) {
+    return message.reply(`💖 Độ thiện cảm: **${percent}%**`);
+  }
 
-      return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${gif}`);
-    }
+  return message.reply(`💖 Độ thiện cảm: **${percent}%**\n${gif}`);
+
+}
 
     // ===== HELP =====
 
@@ -168,45 +196,50 @@ ${prefix}ai <text>
       }
 
     }
+// ===== PAT =====
+
+if (content === prefix + "pat") {
+
+  const gif = await getAnimeGif("pat");
+
+  if (!gif) return message.reply("Không tìm được GIF 😢");
+
+  return message.reply("🫳 Ngoan nào\n" + gif);
+
+}
 // ===== HUG =====
+
 if (content === prefix + "hug") {
 
-  const gifs = [
-    "https://media.giphy.com/media/QFPoctlgZ5s0E/giphy.gif",
-    "https://media.giphy.com/media/svXXBgduBsJ1u/giphy.gif",
-    "https://media.giphy.com/media/WynnqxhdFEPYY/giphy.gif"
-  ];
+  const gif = await getAnimeGif("hug");
 
-  const gif = gifs[Math.floor(Math.random() * gifs.length)];
+  if (!gif) return message.reply("Không tìm được GIF 😢");
 
   return message.reply("🤗 Nay cũng biết đòi ôm luôn à\n" + gif);
-}
 
+}
 // ===== KISS =====
+
 if (content === prefix + "kiss") {
 
-  const gifs = [
-    "https://media.giphy.com/media/FqBTvSNjNzeZG/giphy.gif",
-    "https://media.giphy.com/media/bGm9FuBCGg4SY/giphy.gif"
-  ];
+  const gif = await getAnimeGif("kiss");
 
-  const gif = gifs[Math.floor(Math.random() * gifs.length)];
+  if (!gif) return message.reply("Không tìm được GIF 😢");
 
   return message.reply("💋 Chụt\n" + gif);
-}
+
+}}
 
 // ===== LICK =====
+
 if (content === prefix + "lick") {
 
-  const gifs = [
-    "https://media.giphy.com/media/11k3oaUjSlFR4I/giphy.gif",
-    "https://media.giphy.com/media/QX6wZEQB33qaheyJlw/giphy.gif",
-    "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif"
-  ];
+  const gif = await getAnimeGif("lick");
 
-  const gif = gifs[Math.floor(Math.random() * gifs.length)];
+  if (!gif) return message.reply("Không tìm được GIF 😢");
 
   return message.reply("👅\n" + gif);
+
 }
 
 
