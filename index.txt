@@ -123,7 +123,7 @@ bots.forEach(config => {
     // ===== HI =====
 
     if (content === prefix + "hi") {
-      return message.reply("Anh chào em nhaư");
+      return message.reply("Anh chào em nha");
     }
 
     // ===== SLEEP =====
@@ -460,6 +460,7 @@ if(cmd === "resetall"){
   fs.writeFileSync("./levels.json", JSON.stringify(levels,null,2));
 
   return message.reply("💥 Đã reset toàn bộ level server.");
+}
 }
 
   /*
