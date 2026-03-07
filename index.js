@@ -508,7 +508,7 @@ levelBot.on("messageCreate", async (message)=>{
 
   const args = content.slice(LEVEL_PREFIX.length).trim().split(/ +/);
   const cmd = args[0];
-
+}
   // ===== PROFILE =====
   if(cmd === "profile"){
 const data = await getLevel(id);
@@ -718,7 +718,7 @@ data.lvl_year++;
 }
 
 await saveLevel(id,data);
-
+}
 });
 // VOICEXP
 setInterval(async () => {
