@@ -110,7 +110,6 @@ const res = await pool.query(
 "SELECT * FROM levels WHERE userid=$1",
 [id]
 );
-const data = row.rows[0];
 if(res.rows.length === 0){
 
 await pool.query(
@@ -716,7 +715,6 @@ data.lvl_month++;
 if(data.xp_year >= needYear){
 data.xp_year -= needYear;
 data.lvl_year++;
-}
 }
 
 await saveLevel(id,data);
