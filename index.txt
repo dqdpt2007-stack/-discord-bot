@@ -538,12 +538,13 @@ async function startSystem() {
         return message.reply("🏆 Đã thêm thành tích");
       }
 
-      if (cmd === "top") {
+	if (cmd === "top") {
         const topEmbed = new EmbedBuilder()
           .setTitle("🏆 BẢNG XẾP HẠNG (LEADERBOARD)")
           .setColor("#ffd700")
           .setFooter({ text: "Cập nhật liên tục từ Database" });
 
+        // Tinh chỉnh lại hàm để hỗ trợ hiện Kcoin
         const buildTopText = async (rows, type) => {
           if (rows.length === 0) return "Chưa có ai.";
           let text = "";
@@ -554,20 +555,30 @@ async function startSystem() {
               const fetchedUser = await levelBot.users.fetch(user.userid);
               username = fetchedUser.username;
             } catch (e) {}
-            const lvl = user[`lvl_${type}`];
-            text += `**${i + 1}.** ${username} - Lv.${lvl}\n`;
+            
+            // Nếu là dạng coin thì hiện số Kcoin, ngược lại hiện Level
+            if (type === "coin") {
+              text += `**${i + 1}.** ${username} - **${user.kcoin.toLocaleString()}** KC\n`;
+            } else {
+              const lvl = user[`lvl_${type}`];
+              text += `**${i + 1}.** ${username} - Lv.${lvl}\n`;
+            }
           }
           return text;
         };
 
+        // Lấy dữ liệu từ database cho cả XP và Kcoin
         const resWeek = await pool.query("SELECT * FROM levels ORDER BY lvl_week DESC, xp_week DESC LIMIT 10");
         const resMonth = await pool.query("SELECT * FROM levels ORDER BY lvl_month DESC, xp_month DESC LIMIT 10");
         const resYear = await pool.query("SELECT * FROM levels ORDER BY lvl_year DESC, xp_year DESC LIMIT 10");
+        const resCoin = await pool.query("SELECT * FROM levels ORDER BY kcoin DESC LIMIT 10");
 
+        // Đưa dữ liệu vào khung Embed
         topEmbed.addFields(
           { name: "📅 TOP TUẦN", value: await buildTopText(resWeek.rows, "week"), inline: true },
           { name: "🗓️ TOP THÁNG", value: await buildTopText(resMonth.rows, "month"), inline: true },
-          { name: "📆 TOP NĂM", value: await buildTopText(resYear.rows, "year"), inline: true }
+          { name: "📆 TOP NĂM", value: await buildTopText(resYear.rows, "year"), inline: true },
+          { name: "💰 ĐẠI GIA KCOIN", value: await buildTopText(resCoin.rows, "coin"), inline: false } // Đặt inline: false để nó nằm riêng một hàng cho rộng rãi
         );
 
         return message.reply({ embeds: [topEmbed] });
