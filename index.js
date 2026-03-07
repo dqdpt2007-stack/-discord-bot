@@ -22,6 +22,19 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+async function sendLvlNotify(guild, embed) {
+  try {
+    const res = await pool.query("SELECT lvl_channel FROM guild_settings WHERE guildid=$1", [guild.id]);
+    const channelId = res.rows[0]?.lvl_channel;
+    if (!channelId) return; // Nếu chưa set channel thì không gửi
+
+    const channel = guild.channels.cache.get(channelId);
+    if (channel) await channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("Lỗi gửi thông báo level:", err);
+  }
+}
+
 // ===== GROQ =====
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -83,6 +96,12 @@ async function initDB() {
         xp_week INT DEFAULT 0, lvl_week INT DEFAULT 1,
         xp_month INT DEFAULT 0, lvl_month INT DEFAULT 1,
         xp_year INT DEFAULT 0, lvl_year INT DEFAULT 1
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS guild_settings (
+        guildid TEXT PRIMARY KEY,
+        lvl_channel TEXT
       )
     `);
     
@@ -152,12 +171,15 @@ async function getAnimeGif(tag) {
 async function startSystem() {
   await initDB();
 
+  // ==========================================
+  // ===== 1. KHỞI ĐỘNG CÁC BOT AI ============
+  // ==========================================
   bots.forEach(config => {
     const client = new Client({
-      intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent ]
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
     });
 
-    client.once("clientReady", () => console.log(`✅ Bot online: ${client.user.tag}`));
+    client.once("ready", (c) => console.log(`✅ AI Bot online: ${c.user.tag}`));
 
     client.on("messageCreate", async (message) => {
       if (message.author.bot) return;
@@ -290,56 +312,97 @@ async function startSystem() {
     client.login(config.token);
   });
 
-  // Khởi động Level Bot
+  // ==========================================
+  // ===== 2. KHỞI ĐỘNG LEVEL BOT =============
+  // ==========================================
   const levelBot = new Client({
     intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent ]
   });
 
-  levelBot.once("clientReady", () => console.log(`📈 Level bot online: ${levelBot.user.tag}`));
+  levelBot.once("ready", () => {
+    console.log(`📈 Level bot online: ${levelBot.user.tag}`);
+  });
 
   levelBot.on("messageCreate", async (message) => {
-    if (message.author.bot) return;
+    if (message.author.bot || !message.guild) return;
 
-    const content = message.content;
     const id = message.author.id;
     const now = Date.now();
+    const content = message.content.trim();
 
+    // CHẶN: Không cộng XP hay xử lý nếu là lệnh của AI Bot
+    if (content.startsWith("^") || content.startsWith("!!")) return;
+
+    // --- PHẦN A: XỬ LÝ LỆNH LEVEL (lvl!) ---
     if (content.startsWith(LEVEL_PREFIX)) {
       const args = content.slice(LEVEL_PREFIX.length).trim().split(/ +/);
-      const cmd = args[0];
+      const cmd = args.shift().toLowerCase();
+
+      if (cmd === "setchannel") {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return message.reply("❌ Cần quyền Manage Guild.");
+        const channel = message.mentions.channels.first() || message.channel;
+        await pool.query("INSERT INTO guild_settings (guildid, lvl_channel) VALUES ($1, $2) ON CONFLICT (guildid) DO UPDATE SET lvl_channel = $2", [message.guild.id, channel.id]);
+        return message.reply(`✅ Đã đặt kênh thông báo tại: ${channel}`);
+      }
 
       if (cmd === "check") {
-        const checkLvl = parseInt(args[1]);
+        const checkLvl = parseInt(args[0]);
         if (!checkLvl || isNaN(checkLvl)) return message.reply("Vui lòng nhập số level. VD: `lvl!check 10`");
         return message.reply(`Để đạt Level **${checkLvl}**, người chơi cần **${xpNeeded(checkLvl)} XP** (làm tròn chục).`);
       }
 
-      if (cmd === "profile" || cmd === "rank") {
+      if (cmd === "rank") {
+        const data = await getLevel(id);
+        if (!data) return message.reply("❌ Lỗi lấy dữ liệu từ hệ thống.");
+
+        const isBoosted = data.boost_until > now;
+        const remainWeek = xpNeeded(data.lvl_week) - data.xp_week;
+        const remainMonth = xpNeeded(data.lvl_month) - data.xp_month;
+        const remainYear = xpNeeded(data.lvl_year) - data.xp_year;
+
+        const progress = Math.min(Math.floor((data.xp_year / xpNeeded(data.lvl_year)) * 10), 10);
+        const progressBar = "▰".repeat(progress) + "▱".repeat(10 - progress);
+
+        const rankEmbed = new EmbedBuilder()
+          .setColor(isBoosted ? "#F1C40F" : "#5865F2") 
+          .setTitle(`📊 THỨ HẠNG CỦA ${message.author.username.toUpperCase()}`)
+          .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 256 }))
+          .setDescription(isBoosted ? "🚀 *Bạn đang được kích hoạt X2 XP & Kcoin*" : "✨ *Tích cực tương tác để thăng cấp nhé!*")
+          .addFields(
+            { name: "📅 Thống kê tuần", value: `**Cấp:** \`${data.lvl_week}\`\n**XP:** \`${data.xp_week.toLocaleString()}\` / \`${xpNeeded(data.lvl_week).toLocaleString()}\`\n**Thiếu:** \`${remainWeek.toLocaleString()}\``, inline: true },
+            { name: "🗓️ Thống kê tháng", value: `**Cấp:** \`${data.lvl_month}\`\n**XP:** \`${data.xp_month.toLocaleString()}\` / \`${xpNeeded(data.lvl_month).toLocaleString()}\`\n**Thiếu:** \`${remainMonth.toLocaleString()}\``, inline: true },
+            { name: "📆 Thống kê năm (Chính)", value: `**Cấp:** \`${data.lvl_year}\`\n**Tiến trình:** \`[${progressBar}]\` (\`${Math.round((data.xp_year / xpNeeded(data.lvl_year)) * 100)}%\`)\n**Cần thêm:** \`${remainYear.toLocaleString()} XP\` để lên cấp tiếp theo.`, inline: false }
+          )
+          .setFooter({ text: `Yêu cầu bởi ${message.author.tag}`, iconURL: message.author.displayAvatarURL() })
+          .setTimestamp();
+
+        return message.reply({ embeds: [rankEmbed] });
+      }
+
+      if (cmd === "profile") {
         const data = await getLevel(id);
         if (!data) return message.reply("Lỗi lấy dữ liệu.");
 
-        const needWeek = xpNeeded(data.lvl_week);
-        const needMonth = xpNeeded(data.lvl_month);
-        const needYear = xpNeeded(data.lvl_year);
-        
-        let boostText = "Không có";
-        if (data.boost_until > now) {
-          boostText = `Đang kích hoạt (Còn ${formatTimeLeft(data.boost_until - now)})`;
-        }
-
-        if (cmd === "rank") {
-          return message.reply(`📊 LEVEL\n📅 Week: Lv ${data.lvl_week} (${data.xp_week}/${needWeek})\n🗓 Month: Lv ${data.lvl_month} (${data.xp_month}/${needMonth})\n📆 Year: Lv ${data.lvl_year} (${data.xp_year}/${needYear})\n🪙 Kcoin: **${data.kcoin}**`);
-        }
-
+        const isBoosted = data.boost_until > now;
         const rewards = await pool.query("SELECT reward FROM rewards WHERE userid=$1", [id]);
-        let rewardText = rewards.rows.length > 0 ? rewards.rows.map(r => "🏆 " + r.reward).join("\n") : "None";
+        let rewardText = rewards.rows.length > 0 ? rewards.rows.map(r => "• " + r.reward).join("\n") : "Chưa có thành tích";
 
-        const profileText = `👤 **${message.author.username}**\n\n🪙 **Tài sản:** ${data.kcoin} Kcoin\n🚀 **Boost x2:** ${boostText}\n\n📅 Week: Lv ${data.lvl_week} (${data.xp_week}/${needWeek})\n🗓 Month: Lv ${data.lvl_month} (${data.xp_month}/${needMonth})\n📆 Year: Lv ${data.lvl_year} (${data.xp_year}/${needYear})\n\n🏅 Thành tích:\n${rewardText}`;
-        const embed = new EmbedBuilder().setTitle("📊 PROFILE").setDescription(profileText).setColor("#ff66cc");
-        return message.reply({ embeds: [embed] });
+        const profileEmbed = new EmbedBuilder()
+          .setColor(isBoosted ? "#F1C40F" : "#FF66CC")
+          .setTitle(`👤 HỒ SƠ NGƯỜI DÙNG`)
+          .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 256 }))
+          .addFields(
+            { name: "Người sở hữu", value: `${message.author.tag}`, inline: true },
+            { name: "🪙 Kcoin", value: `**${data.kcoin.toLocaleString()}**`, inline: true },
+            { name: "🚀 Boost", value: isBoosted ? `Đang bật` : "Không", inline: true },
+            { name: "📊 Cấp độ cao nhất (Năm)", value: `Cấp **${data.lvl_year}**`, inline: false },
+            { name: "🏅 Danh hiệu", value: rewardText, inline: false }
+          )
+          .setFooter({ text: "Dùng lvl!rank để xem chi tiết XP từng mốc" });
+          
+        return message.reply({ embeds: [profileEmbed] });
       }
 
-      // 1. Nhận quà hằng ngày
       if (cmd === "daily") {
         const data = await getLevel(id);
         if (now - data.daily_last < 86400000) {
@@ -367,7 +430,6 @@ async function startSystem() {
         }
       }
 
-      // 2. Cửa hàng
       if (cmd === "shop") {
         const shopEmbed = new EmbedBuilder()
           .setTitle("🛒 Cửa Hàng Kcoin")
@@ -381,26 +443,21 @@ async function startSystem() {
       }
 
       if (cmd === "buy") {
-        if (args[1] === "boost") {
+        if (args[0] === "boost") {
           const data = await getLevel(id);
-          if (data.kcoin < 10000) return message.reply("❌ Bạn không đủ tiền! Cần **10,000 Kcoin** để mua vật phẩm này.");
+          if (data.kcoin < 10000) return message.reply("❌ Bạn không đủ tiền! Cần **10,000 Kcoin**.");
           
           data.kcoin -= 10000;
-          if (data.boost_until > now) {
-            data.boost_until += 3600000; 
-          } else {
-            data.boost_until = now + 3600000;
-          }
+          data.boost_until = (data.boost_until > now) ? data.boost_until + 3600000 : now + 3600000;
           await saveLevel(id, data);
           return message.reply("✅ Mua thành công **Thuốc tăng lực (Boost)**! Bạn đã được kích hoạt trạng thái x2 trong vòng 1 giờ.");
         }
         return message.reply("❌ Mã vật phẩm không tồn tại. Gõ `lvl!shop` để xem danh sách.");
       }
 
-      // 3. Chuyển tiền (Trade)
       if (cmd === "trade" || cmd === "pay" || cmd === "give") {
         const targetUser = message.mentions.users.first();
-        const amount = parseInt(args[2]);
+        const amount = parseInt(args[1]);
 
         if (!targetUser) return message.reply("❌ Bạn cần tag người muốn chuyển tiền. Dùng: `lvl!trade @user <số tiền>`");
         if (targetUser.bot) return message.reply("❌ Bạn không thể chuyển tiền cho Bot!");
@@ -421,9 +478,8 @@ async function startSystem() {
         return message.reply(`💸 Chuyển khoản thành công! Bạn đã gửi **${amount} Kcoin** cho <@${targetUser.id}>.`);
       }
 
-      // 4. Tung đồng xu (Coinflip)
       if (cmd === "cf") {
-        const bet = parseInt(args[1]);
+        const bet = parseInt(args[0]);
         if (!bet || isNaN(bet) || bet <= 0) return message.reply("❌ Vui lòng nhập số tiền cược hợp lệ. VD: `lvl!cf 500`");
         if (bet > 1000) return message.reply("❌ Bạn chỉ có thể cược tối đa **1000 Kcoin** mỗi lần!");
 
@@ -431,7 +487,6 @@ async function startSystem() {
         if (data.kcoin < bet) return message.reply(`❌ Bạn không đủ Kcoin để cược. Bạn đang có **${data.kcoin} Kcoin**.`);
 
         const isWin = Math.random() < 0.5;
-
         if (isWin) {
           data.kcoin += bet;
           await saveLevel(id, data);
@@ -443,13 +498,11 @@ async function startSystem() {
         }
       }
 
-      // 5. Xem số dư nhanh
       if (cmd === "cash" || cmd === "bal" || cmd === "balance") {
         const data = await getLevel(id);
         return message.reply(`🪙 Hiện tại ví của bạn đang có **${data.kcoin} Kcoin**.`);
       }
 
-      // 6. TOP Kcoin
       if (cmd === "topcoin" || cmd === "richest") {
         const topCoinEmbed = new EmbedBuilder()
           .setTitle("💰 BẢNG XẾP HẠNG ĐẠI GIA (TOP KCOIN)")
@@ -457,7 +510,6 @@ async function startSystem() {
           .setFooter({ text: "Ngân hàng trung ương Server" });
 
         const resCoin = await pool.query("SELECT userid, kcoin FROM levels ORDER BY kcoin DESC LIMIT 10");
-        
         if (resCoin.rows.length === 0) {
           topCoinEmbed.setDescription("Chưa có ai sở hữu Kcoin.");
           return message.reply({ embeds: [topCoinEmbed] });
@@ -471,19 +523,16 @@ async function startSystem() {
             const fetchedUser = await levelBot.users.fetch(user.userid);
             username = fetchedUser.username;
           } catch (e) {}
-          
           text += `**${i + 1}.** ${username} - **${user.kcoin}** Kcoin\n`;
         }
-
         topCoinEmbed.setDescription(text);
         return message.reply({ embeds: [topCoinEmbed] });
       }
 
-      // ===== ADMIN COMMANDS =====
       if (cmd === "reward") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return;
         const user = message.mentions.users.first();
-        const text = args.slice(2).join(" ");
+        const text = args.slice(1).join(" ");
         if (!user || !text) return message.reply("lvl!reward @user <text>");
         await pool.query("INSERT INTO rewards(userid,reward) VALUES($1,$2)", [user.id, text]);
         return message.reply("🏆 Đã thêm thành tích");
@@ -505,7 +554,6 @@ async function startSystem() {
               const fetchedUser = await levelBot.users.fetch(user.userid);
               username = fetchedUser.username;
             } catch (e) {}
-            
             const lvl = user[`lvl_${type}`];
             text += `**${i + 1}.** ${username} - Lv.${lvl}\n`;
           }
@@ -516,14 +564,10 @@ async function startSystem() {
         const resMonth = await pool.query("SELECT * FROM levels ORDER BY lvl_month DESC, xp_month DESC LIMIT 10");
         const resYear = await pool.query("SELECT * FROM levels ORDER BY lvl_year DESC, xp_year DESC LIMIT 10");
 
-        const textWeek = await buildTopText(resWeek.rows, "week");
-        const textMonth = await buildTopText(resMonth.rows, "month");
-        const textYear = await buildTopText(resYear.rows, "year");
-
         topEmbed.addFields(
-          { name: "📅 TOP TUẦN", value: textWeek, inline: true },
-          { name: "🗓️ TOP THÁNG", value: textMonth, inline: true },
-          { name: "📆 TOP NĂM", value: textYear, inline: true }
+          { name: "📅 TOP TUẦN", value: await buildTopText(resWeek.rows, "week"), inline: true },
+          { name: "🗓️ TOP THÁNG", value: await buildTopText(resMonth.rows, "month"), inline: true },
+          { name: "📆 TOP NĂM", value: await buildTopText(resYear.rows, "year"), inline: true }
         );
 
         return message.reply({ embeds: [topEmbed] });
@@ -531,7 +575,7 @@ async function startSystem() {
 
       if (cmd === "reset") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return message.reply("❌ Mod only");
-        const type = args[1];
+        const type = args[0];
         if (type === "week") { await pool.query("UPDATE levels SET xp_week=0,lvl_week=1"); return message.reply("🔄 Reset tuần"); }
         if (type === "month") { await pool.query("UPDATE levels SET xp_month=0,lvl_month=1"); return message.reply("🔄 Reset tháng"); }
         if (type === "year") { await pool.query("UPDATE levels SET xp_year=0,lvl_year=1"); return message.reply("🔄 Reset năm"); }
@@ -549,96 +593,102 @@ async function startSystem() {
           .setFooter({ text: "Hệ thống Level, Tương Tác & Kinh Tế" });
         return message.reply({ embeds: [lvlHelpEmbed] });
       }
+
+      return; // Dừng tại đây, không cho rớt xuống phần cộng điểm Chat XP
     }
 
-    /* ========= CHAT XP & KCOIN ========= */
+    // --- PHẦN B: CỘNG XP KHI CHAT ---
     if (content.length < 5) return;
+    if (cooldown.has(id) && cooldown.get(id) > now) return; 
     
-    if (cooldown.has(id) && cooldown.get(id) > now) return;
-    cooldown.set(id, now + 15000); 
+    cooldown.set(id, now + 15000); // 15s cooldown
     
     const data = await getLevel(id);
     if (!data) return;
 
-    // Check Boost
     const isBoosted = data.boost_until > now;
-    const xpMult = isBoosted ? 2 : 1;
-    const coinMult = isBoosted ? 2 : 1;
-    const jackpotChance = isBoosted ? 0.02 : 0.01; 
-
-    // Cộng XP
-    const baseXp = Math.floor(Math.random() * 91) + 10; 
-    const finalXp = baseXp * xpMult;
-
-    data.xp_week += finalXp; data.xp_month += finalXp; data.xp_year += finalXp;
-
-    // Cộng Kcoin & Xổ số Jackpot
-    let kcoinEarned = (Math.floor(Math.random() * 2) + 1) * coinMult; 
+    const finalXp = (Math.floor(Math.random() * 91) + 10) * (isBoosted ? 2 : 1);
     
-    if (Math.random() < jackpotChance) {
-      kcoinEarned += 100;
-      message.reply(`🎲 **Jackpot!** Nhờ chăm chỉ chat, bạn nhặt được **100 Kcoin** ngẫu nhiên!`).catch(()=>{});
-    }
+    data.xp_week += finalXp; 
+    data.xp_month += finalXp; 
+    data.xp_year += finalXp;
 
+    // Kcoin & Jackpot khi Chat
+    let kcoinEarned = (Math.floor(Math.random() * 2) + 1) * (isBoosted ? 2 : 1); 
+    if (Math.random() < (isBoosted ? 0.02 : 0.01)) {
+      kcoinEarned += 100;
+      const jpEmbed = new EmbedBuilder()
+        .setColor("#FFD700")
+        .setDescription(`🎲 **Jackpot Chat!** <@${id}> vừa nhặt được **100 Kcoin**!`);
+      await sendLvlNotify(message.guild, jpEmbed);
+    }
     data.kcoin += kcoinEarned;
 
+    // Kiểm tra lên cấp
+    let leveledUp = false;
     while (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
     while (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
-    while (data.xp_year >= xpNeeded(data.lvl_year)) { data.xp_year -= xpNeeded(data.lvl_year); data.lvl_year++; }
+    while (data.xp_year >= xpNeeded(data.lvl_year)) { 
+      data.xp_year -= xpNeeded(data.lvl_year); 
+      data.lvl_year++; 
+      leveledUp = true; 
+    }
+
+    if (leveledUp) {
+      const upEmbed = new EmbedBuilder()
+        .setColor("#00FF00")
+        .setDescription(`🎉 Chúc mừng <@${id}> đã đạt đến **Level ${data.lvl_year}**!`);
+      await sendLvlNotify(message.guild, upEmbed);
+    }
 
     await saveLevel(id, data);
   });
 
-  // Voice XP & KCOIN
+  // --- PHẦN C: VOICE XP & KCOIN ---
   setInterval(async () => {
     const now = Date.now();
-
     for (const guild of levelBot.guilds.cache.values()) {
       for (const channel of guild.channels.cache.values()) {
         if (!channel.isVoiceBased()) continue;
-
+        
         for (const member of channel.members.values()) {
-          if (member.user.bot || member.voice.selfMute || member.voice.selfDeaf) continue;
+          if (member.user.bot || member.voice.selfMute) continue; 
 
-          const id = member.user.id;
-          const data = await getLevel(id);
-          if (!data) continue;
-
-          // Check Boost
+          const data = await getLevel(member.id);
           const isBoosted = data.boost_until > now;
-          const xpMult = isBoosted ? 2 : 1;
-          const coinMult = isBoosted ? 2 : 1;
-          const jackpotChance = isBoosted ? 0.02 : 0.01;
 
-          // Cộng XP
-          const baseVoiceXp = Math.floor(Math.random() * 71) + 50;
-          const finalVoiceXp = baseVoiceXp * xpMult;
+          // Cộng XP và Kcoin
+          data.xp_year += (Math.floor(Math.random() * 71) + 50) * (isBoosted ? 2 : 1);
+          let kcoinEarned = (Math.floor(Math.random() * 4) + 2) * (isBoosted ? 2 : 1);
 
-          data.xp_week += finalVoiceXp; data.xp_month += finalVoiceXp; data.xp_year += finalVoiceXp;
-
-          // Cộng Kcoin & Xổ số Jackpot Voice
-          let kcoinEarned = (Math.floor(Math.random() * 4) + 2) * coinMult; 
-          
-          if (Math.random() < jackpotChance) {
+          // Jackpot Voice
+          if (Math.random() < (isBoosted ? 0.02 : 0.01)) {
             kcoinEarned += 100;
-            if (guild.systemChannel) {
-               guild.systemChannel.send(`🎲 **Jackpot Voice!** <@${id}> cắm voice chăm chỉ nên nhặt được **100 Kcoin**!`).catch(()=>{});
-            }
+            const jpVoiceEmbed = new EmbedBuilder()
+              .setColor("#FFD700")
+              .setDescription(`🎲 **Jackpot Voice!** <@${member.id}> cắm voice chăm chỉ nên nhặt được **100 Kcoin**!`);
+            await sendLvlNotify(guild, jpVoiceEmbed);
           }
-
           data.kcoin += kcoinEarned;
 
+          // Check lên cấp
+          let voiceUp = false;
           while (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
           while (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
-          
           while (data.xp_year >= xpNeeded(data.lvl_year)) {
             data.xp_year -= xpNeeded(data.lvl_year);
             data.lvl_year++;
-            if (guild.systemChannel) {
-              guild.systemChannel.send(`🎉 <@${id}> đã lên level ${data.lvl_year}!`).catch(()=>{});
-            }
+            voiceUp = true;
           }
-          await saveLevel(id, data);
+
+          if (voiceUp) {
+            const vEmbed = new EmbedBuilder()
+              .setColor("#0099ff")
+              .setDescription(`🎙️ <@${member.id}> vừa lên **Level ${data.lvl_year}** nhờ treo Voice!`);
+            await sendLvlNotify(guild, vEmbed);
+          }
+
+          await saveLevel(member.id, data);
         }
       }
     }
