@@ -370,6 +370,21 @@ async function startSystem() {
       const args = content.slice(prefix.length).trim().split(/ +/);
       const cmd = args.shift().toLowerCase();
 
+      // 0. Lệnh Help (Mới thêm)
+      if (cmd === "help") {
+        const helpEmbed = new EmbedBuilder()
+          .setTitle("📚 Danh Sách Lệnh Level Bot")
+          .setColor("#5865F2")
+          .setDescription(`Prefix hiện tại của server là: **${prefix}**`)
+          .addFields(
+            { name: "🏆 Cày Cấp & Tiền", value: `\`${prefix}rank\` - Xem rank & tiến trình XP\n\`${prefix}top\` - Bảng xếp hạng server\n\`${prefix}daily\` - Điểm danh nhận Kcoin mỗi 24h\n\`${prefix}cf <tiền>\` - Chơi tung đồng xu (50/50)` },
+            { name: "🛍️ Shop & Gacha", value: `\`${prefix}shop\` - Xem cửa hàng\n\`${prefix}buy <mã>\` - Mua rương/vật phẩm\n\`${prefix}inv\` - Xem túi đồ của bạn\n\`${prefix}use <stt> [số lượng]\` - Mở rương gacha\n\`${prefix}equip <stt>\` - Mặc/tháo trang bị buff\n\`${prefix}giveitem @user <stt>\` - Tặng trang bị/rương cho người khác\n\`${prefix}pay @user <số tiền>\` - Chuyển Kcoin` },
+            { name: "⚙️ Cài đặt (Admin)", value: `\`${prefix}prefix <ký tự mới>\` - Đổi prefix bot cho server\n\`${prefix}setchannel\` - Đặt kênh thông báo thăng cấp hiện tại` }
+          )
+          .setFooter({ text: "Tip: Chat hoặc treo Voice đều được nhận ngẫu nhiên XP & Kcoin nhé!" });
+        return message.reply({ embeds: [helpEmbed] });
+      }
+
       // 1. Lệnh Đổi Prefix (Admin)
       if (cmd === "prefix") {
         if (!message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return message.reply("❌ Cần quyền Quản lý Server.");
@@ -428,7 +443,6 @@ async function startSystem() {
           await saveLevel(id, data);
           return message.reply("✅ Đã kích hoạt Boost x2 trong 1 giờ!");
         } else {
-          // Lưu rương vào Inventory
           const invCheck = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name=$2", [id, itemName]);
           if (invCheck.rows.length > 0) {
             await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [invCheck.rows[0].id]);
@@ -456,7 +470,7 @@ async function startSystem() {
         let desc = "";
 
         items.forEach((item, index) => {
-          const globalIndex = start + index + 1; // STT dùng cho use/equip
+          const globalIndex = start + index + 1; 
           if (item.item_type === 'chest') {
             desc += `**[${globalIndex}]** 📦 ${item.item_name} (x${item.quantity})\n`;
           } else {
@@ -482,7 +496,6 @@ async function startSystem() {
         if (!targetItem || targetItem.item_type !== 'chest') return message.reply("❌ Vật phẩm không tồn tại hoặc không phải là Rương.");
         if (targetItem.quantity < amount) return message.reply(`❌ Bạn chỉ có ${targetItem.quantity} rương này.`);
 
-        // Logic Rút Gacha
         let openedText = "";
         for (let i = 0; i < amount; i++) {
           const rand = Math.random() * 100;
@@ -499,7 +512,7 @@ async function startSystem() {
             else if (rand <= 85) setName = 'Sắt';
             else if (rand <= 95) setName = 'Vàng';
             else setName = 'Kim Cương';
-          } else { // Rương III
+          } else { 
             if (rand <= 40) setName = 'Đồng';
             else if (rand <= 70) setName = 'Sắt';
             else if (rand <= 90) setName = 'Vàng';
@@ -507,12 +520,10 @@ async function startSystem() {
             else setName = 'Phượng Hoàng';
           }
 
-          // Random mảnh ghép (Parts)
           const parts = ['Mũ', 'Giáp', 'Quần', 'Giày', 'Găng tay'];
           const part = parts[Math.floor(Math.random() * parts.length)];
           const finalName = `${part} ${setName}`;
 
-          // Random Chỉ số Buff
           let s_xp=0, s_jpC=0, s_jpM=0, s_gamble=0;
           if (setName === 'Bã mía') s_xp = randInt(1, 5);
           if (setName === 'Đồng') s_xp = randInt(10, 15);
@@ -521,7 +532,6 @@ async function startSystem() {
           if (setName === 'Kim Cương') { s_xp = randInt(40, 60); s_jpC = randInt(3, 5); s_jpM = randInt(50, 100); }
           if (setName === 'Phượng Hoàng') { s_xp = randInt(80, 100); s_jpC = randInt(7, 10); s_jpM = randInt(200, 500); s_gamble = randInt(1, 5); }
 
-          // Thêm đồ vào Database
           await pool.query(
             "INSERT INTO inventory (userid, item_type, item_name, part, set_name, stat_xp, stat_jp_chance, stat_jp_money, stat_gamble) VALUES ($1, 'equip', $2, $3, $4, $5, $6, $7, $8)",
             [id, finalName, part, setName, s_xp, s_jpC, s_jpM, s_gamble]
@@ -529,7 +539,6 @@ async function startSystem() {
           openedText += `✨ **${finalName}** (+${s_xp}% XP)\n`;
         }
 
-        // Trừ rương
         if (targetItem.quantity === amount) {
           await pool.query("DELETE FROM inventory WHERE id=$1", [targetItem.id]);
         } else {
@@ -554,14 +563,13 @@ async function startSystem() {
           return message.reply(`Đã tháo **${targetItem.item_name}**.`);
         }
 
-        // Tháo đồ cũ cùng vị trí (Part) và mặc đồ mới
         await pool.query("UPDATE inventory SET is_equipped=false WHERE userid=$1 AND part=$2", [id, targetItem.part]);
         await pool.query("UPDATE inventory SET is_equipped=true WHERE id=$1", [targetItem.id]);
         return message.reply(`⚔️ Đã trang bị **${targetItem.item_name}**!`);
       }
 
-      // 8. Lệnh Tặng Đồ (Give)
-      if (cmd === "giveitem") { // Đổi thành giveitem để khỏi lộn với cho tiền (give/pay)
+      // 8. Lệnh Tặng Đồ (Give Item)
+      if (cmd === "giveitem") { 
         const targetUser = message.mentions.users.first();
         const index = parseInt(args[1]) - 1;
         
@@ -575,7 +583,6 @@ async function startSystem() {
         if (targetItem.is_equipped) return message.reply("❌ Hãy tháo trang bị ra trước khi cho.");
 
         if (targetItem.item_type === 'chest') {
-          // Cho 1 rương
           if (targetItem.quantity === 1) await pool.query("UPDATE inventory SET userid=$1 WHERE id=$2", [targetUser.id, targetItem.id]);
           else {
             await pool.query("UPDATE inventory SET quantity = quantity - 1 WHERE id=$1", [targetItem.id]);
@@ -584,7 +591,6 @@ async function startSystem() {
             else await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, 'chest', $2, 1)", [targetUser.id, targetItem.item_name]);
           }
         } else {
-          // Cho Trang Bị
           await pool.query("UPDATE inventory SET userid=$1 WHERE id=$2", [targetUser.id, targetItem.id]);
         }
         return message.reply(`🎁 Bạn đã tặng **${targetItem.item_name}** cho <@${targetUser.id}>.`);
@@ -638,7 +644,6 @@ async function startSystem() {
         const data = await getLevel(id);
         if (data.kcoin < bet) return message.reply(`❌ Ví bạn chỉ có **${data.kcoin} Kcoin**.`);
 
-        // Áp dụng buff cờ bạc từ đồ
         const buffs = await getEquipBuffs(id);
         const winMultiplier = 1 + (buffs.gamble / 100); 
 
@@ -710,10 +715,9 @@ async function startSystem() {
     cooldown.set(id, now + 15000); // 15s cooldown
     
     const data = await getLevel(id);
-    const buffs = await getEquipBuffs(id); // Lấy sức mạnh đồ đang mặc
+    const buffs = await getEquipBuffs(id); 
     const isBoosted = data.boost_until > now;
 
-    // Tính Multiplier tổng (Thuốc boost x2 + % trang bị)
     const baseMult = isBoosted ? 2 : 1;
     const xpMultiplier = baseMult * (1 + (buffs.xp / 100));
 
@@ -722,11 +726,9 @@ async function startSystem() {
     data.xp_month += finalXp; 
     data.xp_year += finalXp;
 
-    // Kiểm tra và lên cấp (Level Up) cho Tuần, Tháng, Năm
     let leveledUp = false;
     let rankMsg = "";
 
-    // Check Tuần
     if (data.xp_week >= xpNeeded(data.lvl_week)) {
       data.xp_week -= xpNeeded(data.lvl_week);
       data.lvl_week++;
@@ -734,7 +736,6 @@ async function startSystem() {
       rankMsg += `\n**Tuần:** Cấp ${data.lvl_week}`;
     }
 
-    // Check Tháng
     if (data.xp_month >= xpNeeded(data.lvl_month)) {
       data.xp_month -= xpNeeded(data.lvl_month);
       data.lvl_month++;
@@ -742,7 +743,6 @@ async function startSystem() {
       rankMsg += `\n**Tháng:** Cấp ${data.lvl_month}`;
     }
 
-    // Check Năm
     if (data.xp_year >= xpNeeded(data.lvl_year)) {
       data.xp_year -= xpNeeded(data.lvl_year);
       data.lvl_year++;
@@ -750,15 +750,13 @@ async function startSystem() {
       rankMsg += `\n**Năm:** Cấp ${data.lvl_year}`;
     }
 
-    // Thưởng Kcoin ngẫu nhiên khi chat (Có tính Buff của trang bị)
     const baseKcoinDrop = Math.floor(Math.random() * 20) + 1; 
-    let kcoinMultiplier = baseMult; // Boost thuốc x2
+    let kcoinMultiplier = baseMult; 
     let finalKcoinDrop = Math.floor(baseKcoinDrop * kcoinMultiplier);
     
-    // Tỷ lệ rớt Jackpot (có tính Buff của trang bị)
     const jpChance = 0.001 * (1 + (buffs.jpChance / 100));
     if (Math.random() < jpChance) {
-      const jpReward = 5000 + buffs.jpMoney; // Thưởng JP cơ bản + Buff tiền JP
+      const jpReward = 5000 + buffs.jpMoney; 
       finalKcoinDrop += jpReward;
       
       const jpEmbed = new EmbedBuilder()
@@ -770,10 +768,8 @@ async function startSystem() {
 
     data.kcoin += finalKcoinDrop;
 
-    // Lưu dữ liệu vào Database
     await saveLevel(id, data);
 
-    // Gửi thông báo nếu có lên cấp
     if (leveledUp) {
       const upEmbed = new EmbedBuilder()
         .setTitle("🎉 LÊN CẤP!")
@@ -790,7 +786,6 @@ async function startSystem() {
   levelBot.on("voiceStateUpdate", (oldState, newState) => {
     const userId = newState.id;
 
-    // Người dùng tham gia kênh Voice (chưa bị mute/deaf)
     if (!oldState.channelId && newState.channelId && !newState.selfDeaf && !newState.serverDeaf) {
       if (voiceTimers.has(userId)) clearInterval(voiceTimers.get(userId));
       
@@ -803,26 +798,23 @@ async function startSystem() {
           const baseMult = isBoosted ? 2 : 1;
           const xpMultiplier = baseMult * (1 + (buffs.xp / 100));
           
-          // Treo voice được nhận nhiều XP hơn chat (ví dụ 50 - 100 XP mỗi 5 phút)
           const voiceXp = Math.floor((Math.floor(Math.random() * 51) + 50) * xpMultiplier);
           
           data.xp_week += voiceXp;
           data.xp_month += voiceXp;
           data.xp_year += voiceXp;
           
-          // Thưởng chút Kcoin treo máy
           data.kcoin += Math.floor(10 * baseMult);
 
           await saveLevel(userId, data);
         } catch (err) {
           console.error("Lỗi cộng XP Voice:", err);
         }
-      }, 300000); // 5 phút (300,000 ms) chạy 1 lần
+      }, 300000);
 
       voiceTimers.set(userId, timer);
     }
 
-    // Người dùng rời kênh Voice hoặc bị Deaf/Mute
     if ((oldState.channelId && !newState.channelId) || newState.selfDeaf || newState.serverDeaf) {
       if (voiceTimers.has(userId)) {
         clearInterval(voiceTimers.get(userId));
@@ -834,5 +826,4 @@ async function startSystem() {
   levelBot.login(LEVEL_TOKEN);
 }
 
-// Chạy toàn bộ hệ thống
 startSystem();
