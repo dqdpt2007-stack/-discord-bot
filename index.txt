@@ -86,7 +86,6 @@ async function initDB() {
       )
     `);
     
-    // Tự động thêm các cột mới cho hệ thống tiền tệ nếu chưa có
     await pool.query(`
       ALTER TABLE levels ADD COLUMN IF NOT EXISTS kcoin INT DEFAULT 0;
       ALTER TABLE levels ADD COLUMN IF NOT EXISTS boost_until BIGINT DEFAULT 0;
@@ -153,15 +152,12 @@ async function getAnimeGif(tag) {
 async function startSystem() {
   await initDB();
 
-  // Khởi động các bot chat (Woo & Kaworu)
   bots.forEach(config => {
     const client = new Client({
       intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent ]
     });
 
-    client.once("clientReady", () => {
-      console.log(`✅ Bot online: ${client.user.tag}`);
-    });
+    client.once("clientReady", () => console.log(`✅ Bot online: ${client.user.tag}`));
 
     client.on("messageCreate", async (message) => {
       if (message.author.bot) return;
@@ -238,9 +234,7 @@ async function startSystem() {
       }
 
       const interactions = ["pat", "hug", "kiss", "blush", "hand"];
-      const interactMap = {
-        pat: "xoa đầu", hug: "ôm", kiss: "hôn", blush: "ngại với", hand: "nắm tay"
-      };
+      const interactMap = { pat: "xoa đầu", hug: "ôm", kiss: "hôn", blush: "ngại với", hand: "nắm tay" };
 
       for (const action of interactions) {
         if (content === prefix + action) {
@@ -301,9 +295,7 @@ async function startSystem() {
     intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent ]
   });
 
-  levelBot.once("clientReady", () => {
-    console.log(`📈 Level bot online: ${levelBot.user.tag}`);
-  });
+  levelBot.once("clientReady", () => console.log(`📈 Level bot online: ${levelBot.user.tag}`));
 
   levelBot.on("messageCreate", async (message) => {
     if (message.author.bot) return;
@@ -347,23 +339,21 @@ async function startSystem() {
         return message.reply({ embeds: [embed] });
       }
 
-      // ===== HỆ THỐNG KINH TẾ (ECONOMY) =====
-
       // 1. Nhận quà hằng ngày
       if (cmd === "daily") {
         const data = await getLevel(id);
-        if (now - data.daily_last < 86400000) { // 24 giờ
+        if (now - data.daily_last < 86400000) {
           const timeLeft = formatTimeLeft(86400000 - (now - data.daily_last));
           return message.reply(`⏳ Bạn đã nhận quà rồi! Hãy quay lại sau **${timeLeft}** nữa nhé.`);
         }
 
         const isBoosted = data.boost_until > now;
-        const jackpotChance = isBoosted ? 0.002 : 0.001; // 0.1% gốc, x2 là 0.2%
+        const jackpotChance = isBoosted ? 0.002 : 0.001;
         
-        let baseKcoin = Math.floor(Math.random() * 101) + 100; // 100 - 200
+        let baseKcoin = Math.floor(Math.random() * 101) + 100;
         let kcoinEarned = isBoosted ? baseKcoin * 2 : baseKcoin;
-
         let isJackpot = Math.random() < jackpotChance;
+        
         if (isJackpot) kcoinEarned = 10000;
 
         data.kcoin += kcoinEarned;
@@ -396,7 +386,6 @@ async function startSystem() {
           if (data.kcoin < 10000) return message.reply("❌ Bạn không đủ tiền! Cần **10,000 Kcoin** để mua vật phẩm này.");
           
           data.kcoin -= 10000;
-          // Kích hoạt boost 1 giờ (3.600.000 ms) kể từ hiện tại (cộng dồn nếu đã có)
           if (data.boost_until > now) {
             data.boost_until += 3600000; 
           } else {
@@ -441,18 +430,53 @@ async function startSystem() {
         const data = await getLevel(id);
         if (data.kcoin < bet) return message.reply(`❌ Bạn không đủ Kcoin để cược. Bạn đang có **${data.kcoin} Kcoin**.`);
 
-        // Tung xu 50/50
         const isWin = Math.random() < 0.5;
 
         if (isWin) {
-          data.kcoin += bet; // Cộng tiền thắng
+          data.kcoin += bet;
           await saveLevel(id, data);
           return message.reply(`🪙 Đồng xu ngửa! Chúc mừng bạn đã **Thắng** và nhận được **${bet * 2} Kcoin** (lời ${bet}).`);
         } else {
-          data.kcoin -= bet; // Trừ tiền thua
+          data.kcoin -= bet;
           await saveLevel(id, data);
           return message.reply(`🪙 Đồng xu sấp! Rất tiếc, bạn đã **Thua** và mất **${bet} Kcoin**.`);
         }
+      }
+
+      // 5. Xem số dư nhanh
+      if (cmd === "cash" || cmd === "bal" || cmd === "balance") {
+        const data = await getLevel(id);
+        return message.reply(`🪙 Hiện tại ví của bạn đang có **${data.kcoin} Kcoin**.`);
+      }
+
+      // 6. TOP Kcoin
+      if (cmd === "topcoin" || cmd === "richest") {
+        const topCoinEmbed = new EmbedBuilder()
+          .setTitle("💰 BẢNG XẾP HẠNG ĐẠI GIA (TOP KCOIN)")
+          .setColor("#ffcc00")
+          .setFooter({ text: "Ngân hàng trung ương Server" });
+
+        const resCoin = await pool.query("SELECT userid, kcoin FROM levels ORDER BY kcoin DESC LIMIT 10");
+        
+        if (resCoin.rows.length === 0) {
+          topCoinEmbed.setDescription("Chưa có ai sở hữu Kcoin.");
+          return message.reply({ embeds: [topCoinEmbed] });
+        }
+
+        let text = "";
+        for (let i = 0; i < resCoin.rows.length; i++) {
+          const user = resCoin.rows[i];
+          let username = "Unknown";
+          try {
+            const fetchedUser = await levelBot.users.fetch(user.userid);
+            username = fetchedUser.username;
+          } catch (e) {}
+          
+          text += `**${i + 1}.** ${username} - **${user.kcoin}** Kcoin\n`;
+        }
+
+        topCoinEmbed.setDescription(text);
+        return message.reply({ embeds: [topCoinEmbed] });
       }
 
       // ===== ADMIN COMMANDS =====
@@ -520,7 +544,7 @@ async function startSystem() {
           .setDescription(`Prefix của bot cấp độ là: **${LEVEL_PREFIX}**`)
           .addFields(
             { name: "👤 Cấp độ", value: `\`${LEVEL_PREFIX}rank\` - Xem cấp độ hiện tại\n\`${LEVEL_PREFIX}profile\` - Xem hồ sơ chi tiết và tài sản\n\`${LEVEL_PREFIX}top\` - Bảng xếp hạng XP\n\`${LEVEL_PREFIX}check <level>\` - Đo mức XP cần thiết`, inline: false },
-            { name: "💰 Kinh tế (Kcoin)", value: `\`${LEVEL_PREFIX}daily\` - Nhận lương hằng ngày\n\`${LEVEL_PREFIX}shop\` - Mở cửa hàng\n\`${LEVEL_PREFIX}buy <item>\` - Mua vật phẩm\n\`${LEVEL_PREFIX}trade @user <số tiền>\` - Chuyển tiền\n\`${LEVEL_PREFIX}cf <tiền cược>\` - Tung đồng xu 50/50`, inline: false }
+            { name: "💰 Kinh tế (Kcoin)", value: `\`${LEVEL_PREFIX}cash\` - Xem số dư Kcoin\n\`${LEVEL_PREFIX}topcoin\` - Bảng xếp hạng đại gia\n\`${LEVEL_PREFIX}daily\` - Nhận lương hằng ngày\n\`${LEVEL_PREFIX}shop\` - Mở cửa hàng\n\`${LEVEL_PREFIX}buy <item>\` - Mua vật phẩm\n\`${LEVEL_PREFIX}trade @user <tiền>\` - Chuyển tiền\n\`${LEVEL_PREFIX}cf <tiền cược>\` - Tung đồng xu 50/50`, inline: false }
           )
           .setFooter({ text: "Hệ thống Level, Tương Tác & Kinh Tế" });
         return message.reply({ embeds: [lvlHelpEmbed] });
@@ -540,7 +564,7 @@ async function startSystem() {
     const isBoosted = data.boost_until > now;
     const xpMult = isBoosted ? 2 : 1;
     const coinMult = isBoosted ? 2 : 1;
-    const jackpotChance = isBoosted ? 0.02 : 0.01; // Gốc 1%, Boost lên 2%
+    const jackpotChance = isBoosted ? 0.02 : 0.01; 
 
     // Cộng XP
     const baseXp = Math.floor(Math.random() * 91) + 10; 
@@ -549,7 +573,7 @@ async function startSystem() {
     data.xp_week += finalXp; data.xp_month += finalXp; data.xp_year += finalXp;
 
     // Cộng Kcoin & Xổ số Jackpot
-    let kcoinEarned = (Math.floor(Math.random() * 2) + 1) * coinMult; // Random 1-2 Kcoin
+    let kcoinEarned = (Math.floor(Math.random() * 2) + 1) * coinMult; 
     
     if (Math.random() < jackpotChance) {
       kcoinEarned += 100;
@@ -560,7 +584,7 @@ async function startSystem() {
 
     while (data.xp_week >= xpNeeded(data.lvl_week)) { data.xp_week -= xpNeeded(data.lvl_week); data.lvl_week++; }
     while (data.xp_month >= xpNeeded(data.lvl_month)) { data.xp_month -= xpNeeded(data.lvl_month); data.lvl_month++; }
-    while (data.xp_year >= xp_needed(data.lvl_year)) { data.xp_year -= xpNeeded(data.lvl_year); data.lvl_year++; }
+    while (data.xp_year >= xpNeeded(data.lvl_year)) { data.xp_year -= xpNeeded(data.lvl_year); data.lvl_year++; }
 
     await saveLevel(id, data);
   });
@@ -584,7 +608,7 @@ async function startSystem() {
           const isBoosted = data.boost_until > now;
           const xpMult = isBoosted ? 2 : 1;
           const coinMult = isBoosted ? 2 : 1;
-          const jackpotChance = isBoosted ? 0.02 : 0.01; // Gốc 1%, Boost lên 2%
+          const jackpotChance = isBoosted ? 0.02 : 0.01;
 
           // Cộng XP
           const baseVoiceXp = Math.floor(Math.random() * 71) + 50;
@@ -593,7 +617,7 @@ async function startSystem() {
           data.xp_week += finalVoiceXp; data.xp_month += finalVoiceXp; data.xp_year += finalVoiceXp;
 
           // Cộng Kcoin & Xổ số Jackpot Voice
-          let kcoinEarned = (Math.floor(Math.random() * 4) + 2) * coinMult; // Random 2-5 Kcoin
+          let kcoinEarned = (Math.floor(Math.random() * 4) + 2) * coinMult; 
           
           if (Math.random() < jackpotChance) {
             kcoinEarned += 100;
@@ -618,7 +642,7 @@ async function startSystem() {
         }
       }
     }
-  }, 60000); // Quét Voice mỗi 1 phút
+  }, 60000); 
 
   levelBot.login(LEVEL_TOKEN);
 }
