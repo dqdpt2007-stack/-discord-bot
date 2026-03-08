@@ -449,7 +449,7 @@ if (cmd === "equip") {
 
       if (cmd === "cf" || cmd === "coinflip") {
         const bet = parseInt(args[0]);
-        if (!bet || bet <= 0 || bet > 1000) return message.reply(`❌ Cược từ 1 - 1000 Kcoin. Dùng: \`${prefix}cf <tiền>\``);
+        if (!bet || bet <= 0 || bet > 5000) return message.reply(`❌ Cược từ 1 - 5000 Kcoin. Dùng: \`${prefix}cf <tiền>\``);
 
         const data = await getLevel(id);
         if (data.kcoin < bet) return message.reply(`❌ Ví bạn chỉ có **${data.kcoin.toLocaleString()} Kcoin**.`);
