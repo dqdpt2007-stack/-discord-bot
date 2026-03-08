@@ -1,19 +1,13 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require("discord.js");
-const axios = require("axios");
 const { Pool } = require("pg");
-const Groq = require("groq-sdk");
 
 const cooldown = new Map();
-const guildPrefixCache = new Map(); // Cache lưu prefix của từng server
+const guildPrefixCache = new Map();
 
 // ===== CHECK ENV =====
-if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2 || !process.env.DISCORD_TOKEN_LVL) {
-  console.error("❌ Missing DISCORD_TOKEN_1, 2 or LVL");
-  process.exit(1);
-}
-if (!process.env.GROQ_API_KEY) {
-  console.error("❌ Missing GROQ_API_KEY");
+if (!process.env.DISCORD_TOKEN_LVL) {
+  console.error("❌ Missing DISCORD_TOKEN_LVL");
   process.exit(1);
 }
 
@@ -22,53 +16,6 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
-
-async function sendLvlNotify(guild, embed) {
-  try {
-    const res = await pool.query("SELECT lvl_channel FROM guild_settings WHERE guildid=$1", [guild.id]);
-    const channelId = res.rows[0]?.lvl_channel;
-    if (!channelId) return;
-
-    const channel = guild.channels.cache.get(channelId);
-    if (channel) await channel.send({ embeds: [embed] });
-  } catch (err) {
-    console.error("Lỗi gửi thông báo level:", err);
-  }
-}
-
-// ===== GROQ =====
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-// ===== BOT CONFIG =====
-const bots = [
-  {
-    token: process.env.DISCORD_TOKEN_1,
-    prefix: "^",
-    personality: `
-BOT 1
-Bạn là Woo
-bạn trai của Vi
-cậu ấy có tính cách ấm áp và vui vẻ, trung thực và được nhiều người yêu mến
-xưng anh gọi người dùng là em
-thường thêm các cảm xúc trong // // ví dụ // ngại ngùng //
-`
-  },
-  {
-    token: process.env.DISCORD_TOKEN_2,
-    prefix: "!!",
-    personality: `
-BOT 2
-Bạn là Kaworu
-bạn trai của shinji nhưng vẫn thích "wean"
-xưng anh gọi người dùng là em
-Luôn điềm tĩnh, gần như không bị cảm xúc tiêu cực chi phối.
-Rất thấu hiểu con người, đặc biệt là nỗi cô đơn của người khác.
-Nhẹ nhàng, dịu dàng, nói chuyện như đang an ủi.
-Có kiểu chấp nhận số phận và hy sinh rất bình thản.
-thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
-`
-  }
-];
 
 const DEFAULT_LEVEL_PREFIX = "lvl!";
 const LEVEL_TOKEN = process.env.DISCORD_TOKEN_LVL;
@@ -90,13 +37,25 @@ function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Lấy prefix cho server
 async function getPrefix(guildId) {
   if (guildPrefixCache.has(guildId)) return guildPrefixCache.get(guildId);
   const res = await pool.query("SELECT prefix FROM guild_settings WHERE guildid=$1", [guildId]);
   const prefix = res.rows[0]?.prefix || DEFAULT_LEVEL_PREFIX;
   guildPrefixCache.set(guildId, prefix);
   return prefix;
+}
+
+async function sendLvlNotify(guild, embed) {
+  try {
+    const res = await pool.query("SELECT lvl_channel FROM guild_settings WHERE guildid=$1", [guild.id]);
+    const channelId = res.rows[0]?.lvl_channel;
+    if (!channelId) return;
+
+    const channel = guild.channels.cache.get(channelId);
+    if (channel) await channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error("Lỗi gửi thông báo level:", err);
+  }
 }
 
 // ===== DATABASE FUNCTIONS =====
@@ -185,159 +144,12 @@ async function getEquipBuffs(userid) {
   return buffs;
 }
 
-async function getAnimeGif(tag) {
-  try {
-    const res = await axios.get(`https://nekos.best/api/v2/${tag}`);
-    return res.data.results?.[0]?.url || null;
-  } catch (err) { return null; }
-}
-
 // ==========================================
-// ===== BẮT ĐẦU HỆ THỐNG ===================
+// ===== BẮT ĐẦU BOT LEVEL ==================
 // ==========================================
-async function startSystem() {
+async function startLevelBot() {
   await initDB();
 
-  // 1. KHỞI ĐỘNG CÁC BOT AI
-  bots.forEach(config => {
-    const client = new Client({
-      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
-    });
-
-    client.once("ready", (c) => console.log(`✅ AI Bot online: ${c.user.tag}`));
-
-    client.on("messageCreate", async (message) => {
-      if (message.author.bot) return;
-
-      const content = message.content;
-      const prefix = config.prefix;
-
-      if (content === prefix + "hi") return message.reply("Anh chào em nha");
-      if (content === prefix + "sleep") return message.reply("Ngủ ngon nha bé ngoan của anh");
-
-      if (content === prefix + "love") {
-        const percent = Math.floor(Math.random() * 101);
-        let action = "", gifTag = null;
-        
-        if (percent < 10) { action = "giận dỗi, lùi ra xa"; gifTag = "slap"; }
-        else if (percent < 35) { action = "nắm tay nhẹ nhàng"; gifTag = "handhold"; }
-        else if (percent < 50) { action = "xoa đầu dỗ dành"; gifTag = "pat"; }
-        else if (percent < 80) { action = "ôm ấp tình cảm"; gifTag = "hug"; }
-        else if (percent < 99) { action = "hôn nồng cháy"; gifTag = "kiss"; }
-        else { action = "đỏ mặt, muốn kết hôn"; gifTag = "blush"; }
-
-        let gif = gifTag ? await getAnimeGif(gifTag) : null;
-
-        try {
-          const chat = await groq.chat.completions.create({
-            messages: [
-              { role: "system", content: config.personality },
-              { role: "user", content: `Người dùng vừa đo thiện cảm và đạt ${percent}%. Bạn đang có hành động: "${action}". Hãy nói 1 câu phù hợp với tình huống này và đúng tính cách của bạn.` }
-            ],
-            model: "llama-3.3-70b-versatile"
-          });
-
-          const loveEmbed = new EmbedBuilder()
-            .setTitle(`💖 Độ thiện cảm: ${percent}%`)
-            .setDescription(chat.choices[0].message.content)
-            .setColor("#ff3399");
-
-          if (gif) loveEmbed.setImage(gif);
-
-          return message.reply({ embeds: [loveEmbed] });
-        } catch (err) {
-          return message.reply(`💖 Độ thiện cảm: **${percent}%**\nLỗi AI không nói được.`);
-        }
-      }
-
-      if (content === prefix + "help") {
-        const helpEmbed = new EmbedBuilder()
-          .setTitle("📜 Danh Sách Lệnh AI Bot")
-          .setColor("#00BFFF")
-          .setDescription(`Dưới đây là các lệnh bạn có thể sử dụng (Prefix: **${prefix}**):`)
-          .addFields(
-            { name: "💬 Giao tiếp cơ bản", value: `\`${prefix}hi\` - Chào bot\n\`${prefix}sleep\` - Chúc bot ngủ ngon\n\`${prefix}love\` - Đo độ thiện cảm`, inline: false },
-            { name: "🫂 Hành động (Có ảnh GIF)", value: `\`${prefix}hug\` - Ôm\n\`${prefix}pat\` - Xoa đầu\n\`${prefix}kiss\` - Hôn\n\`${prefix}blush\` - Ngại ngùng\n\`${prefix}hand\` - Nắm tay`, inline: false },
-            { name: "🤖 Tính năng AI", value: `\`${prefix}ai <nội dung>\` - Chat với AI\n\`${prefix}rep <id tin nhắn> <nội dung>\` - Nhờ bot reply tin nhắn`, inline: false }
-          )
-          .setFooter({ text: "Bot Tương Tác & Trí Tuệ Nhân Tạo" });
-        return message.reply({ embeds: [helpEmbed] });
-      }
-
-      if (content.startsWith(prefix + "ai ")) {
-        const prompt = content.slice((prefix + "ai ").length).trim();
-        if (!prompt) return message.reply("Nói gì đi.");
-        try {
-          const chat = await groq.chat.completions.create({
-            messages: [ { role: "system", content: config.personality }, { role: "user", content: prompt } ],
-            model: "llama-3.3-70b-versatile"
-          });
-          let reply = chat.choices?.[0]?.message?.content || "Không nghĩ ra câu trả lời.";
-          if (reply.length > 2000) reply = reply.substring(0, 2000);
-          return message.reply(reply);
-        } catch (err) {
-          return message.reply("AI lỗi rồi");
-        }
-      }
-
-      const interactions = ["pat", "hug", "kiss", "blush", "hand"];
-      const interactMap = { pat: "xoa đầu", hug: "ôm", kiss: "hôn", blush: "ngại với", hand: "nắm tay" };
-
-      for (const action of interactions) {
-        if (content === prefix + action) {
-          let queryTag = action === "hand" ? "handhold" : action;
-          const gif = await getAnimeGif(queryTag);
-          if (!gif) return message.reply("Không tìm được GIF 😢");
-
-          try {
-            const chat = await groq.chat.completions.create({
-              messages: [
-                { role: "system", content: config.personality },
-                { role: "user", content: `Tạo 1 câu anime dễ thương khi ${interactMap[action]} người yêu` }
-              ],
-              model: "llama-3.3-70b-versatile"
-            });
-
-            const interactEmbed = new EmbedBuilder()
-              .setDescription(chat.choices[0].message.content)
-              .setColor("#ffcc99")
-              .setImage(gif);
-
-            return message.reply({ embeds: [interactEmbed] });
-          } catch(e) {
-            const failEmbed = new EmbedBuilder().setColor("#ffcc99").setImage(gif);
-            return message.reply({ embeds: [failEmbed] });
-          }
-        }
-      }
-
-      if (content.startsWith(prefix + "rep")) {
-        const args = content.split(" ");
-        const msgID = args[1];
-        const text = args.slice(2).join(" ");
-        if (!msgID || !text) return message.reply(`Dùng: ${prefix}rep <messageID> <nội dung>`);
-        try {
-          let found = null;
-          for (const channel of message.guild.channels.cache.values()) {
-            if (!channel.isTextBased()) continue;
-            try {
-              const msg = await channel.messages.fetch(msgID);
-              if (msg) { found = msg; break; }
-            } catch {}
-          }
-          if (!found) return message.reply("Không tìm thấy message.");
-          await found.reply(text);
-          try { await message.delete(); } catch {}
-        } catch (err) {
-          message.reply("Lỗi khi reply.");
-        }
-      }
-    });
-
-    client.login(config.token);
-  });
-
-  // 2. KHỞI ĐỘNG LEVEL BOT
   const levelBot = new Client({
     intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.MessageContent ]
   });
@@ -351,6 +163,7 @@ async function startSystem() {
     const now = Date.now();
     const content = message.content.trim();
 
+    // Bỏ qua lệnh của AI bot
     if (content.startsWith("^") || content.startsWith("!!")) return;
 
     const prefix = await getPrefix(message.guild.id);
@@ -367,7 +180,7 @@ async function startSystem() {
           .setDescription(`Prefix hiện tại của server là: **${prefix}**`)
           .addFields(
             { name: "🏆 Cày Cấp & Tiền", value: `\`${prefix}profile\` - Xem hồ sơ & hạng\n\`${prefix}cash\` - Xem tiền\n\`${prefix}top\` - Bảng xếp hạng\n\`${prefix}daily\` - Nhận thưởng mỗi 24h\n\`${prefix}cf <tiền>\` - Chơi tung đồng xu (50/50)` },
-            { name: "🛍️ Shop & Gacha", value: `\`${prefix}shop\` - Xem cửa hàng\n\`${prefix}buy <mã>\` - Mua vật phẩm\n\`${prefix}inv\` - Xem túi đồ\n\`${prefix}use <stt> [SL]\` - Mở rương gacha\n\`${prefix}equip <stt>\` - Mặc/tháo đồ\n\`${prefix}giveitem @user <stt>\` - Tặng đồ\n\`${prefix}pay @user <tiền>\` - Chuyển Kcoin` },
+            { name: "🛍️ Shop & Gacha", value: `\`${prefix}shop\` - Xem cửa hàng\n\`${prefix}buy <mã>\` - Mua vật phẩm\n\`${prefix}inv\` - Xem túi đồ\n\`${prefix}use <stt> [SL]\` - Mở rương gacha\n\`${prefix}equip <stt>\` - Mặc/tháo đồ\n\`${prefix}giveitem @user <stt>\` - Tặng đồ\n\`${prefix}give @user <tiền>\` - Chuyển Kcoin` },
             { name: "⚙️ Cài đặt", value: `\`${prefix}prefix <ký tự mới>\` - Đổi prefix\n\`${prefix}setchannel\` - Đặt kênh báo level` }
           )
           .setFooter({ text: "Tip: Chat hoặc treo Voice đều được nhận ngẫu nhiên XP & Kcoin nhé!" });
@@ -530,8 +343,7 @@ async function startSystem() {
 
         return message.reply(`🎉 Bạn đã mở **${amount} ${targetItem.item_name}** và nhận được:\n${openedText}`);
       }
-
-      if (cmd === "equip") {
+if (cmd === "equip") {
         const index = parseInt(args[0]) - 1;
         if (isNaN(index) || index < 0) return message.reply(`❌ Dùng: \`${prefix}equip <STT_Trong_Túi>\``);
 
@@ -577,9 +389,6 @@ async function startSystem() {
         return message.reply(`🎁 Bạn đã tặng **${targetItem.item_name}** cho <@${targetUser.id}>.`);
       }
 
-      // ==========================================
-      // LỆNH MỚI: CASH (Kiểm tra tiền)
-      // ==========================================
       if (cmd === "cash" || cmd === "bal" || cmd === "balance" || cmd === "money") {
         const data = await getLevel(id);
         const embed = new EmbedBuilder()
@@ -588,9 +397,6 @@ async function startSystem() {
         return message.reply({ embeds: [embed] });
       }
 
-      // ==========================================
-      // LỆNH ĐƯỢC GỘP: PROFILE / RANK
-      // ==========================================
       if (cmd === "rank" || cmd === "profile" || cmd === "info") {
         const data = await getLevel(id);
         const buffs = await getEquipBuffs(id);
@@ -603,7 +409,6 @@ async function startSystem() {
         const progress = Math.min(Math.floor((data.xp_year / xpNeeded(data.lvl_year)) * 10), 10);
         const progressBar = "▰".repeat(progress) + "▱".repeat(10 - progress);
 
-        // Hiển thị Buff nếu có
         let buffText = "Không có";
         if (buffs.xp > 0 || buffs.gamble > 0 || buffs.jpChance > 0) {
           buffText = `+${buffs.xp}% XP | +${buffs.gamble}% Cờ bạc | +${buffs.jpChance}% Tỉ lệ JP`;
@@ -669,7 +474,6 @@ async function startSystem() {
         const targetUser = message.mentions.users.first();
         const amount = parseInt(args[1]);
         
-        // Đã sửa lại thông báo lỗi thành ${prefix}give thay vì pay
         if (!targetUser || !amount || amount <= 0 || targetUser.bot || targetUser.id === id) {
             return message.reply(`❌ Dùng: \`${prefix}give @user <số_tiền>\``);
         }
@@ -717,7 +521,7 @@ async function startSystem() {
       return; // Dừng xử lý nếu đã dính vào block lệnh
     }
 
-    // --- PHẦN B: CỘNG XP KHI CHAT TỰ ĐỘNG (Phần code bạn bị đứt đã được nối liền) ---
+    // --- PHẦN B: CỘNG XP KHI CHAT TỰ ĐỘNG ---
     if (content.length < 5) return;
     if (cooldown.has(id) && cooldown.get(id) > now) return; 
     
@@ -835,4 +639,4 @@ async function startSystem() {
   levelBot.login(LEVEL_TOKEN);
 }
 
-startSystem();
+startLevelBot();
