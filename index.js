@@ -9,5 +9,5 @@ http.createServer((req, res) => {
 console.log("🚀 Đang khởi động hệ thống Bot...");
 
 // Chạy 2 file bot của bạn
-require('./ket.js');
+require('./kei.js');
 require('./ai.js');
