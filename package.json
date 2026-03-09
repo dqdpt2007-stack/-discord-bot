@@ -35,5 +35,8 @@
   "bugs": {
     "url": "https://github.com/dqdpt2007-stack/-discord-bot/issues"
   },
-  "homepage": "https://github.com/dqdpt2007-stack/-discord-bot#readme"
+  "homepage": "https://github.com/dqdpt2007-stack/-discord-bot#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }
