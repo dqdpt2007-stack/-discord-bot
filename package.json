@@ -25,7 +25,8 @@
     "groq-sdk": "^0.37.0",
     "openai": "^6.27.0",
     "opusscript": "0.0.8",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "undici": "7.22.0"
   },
   "repository": {
     "type": "git",
