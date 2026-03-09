@@ -691,7 +691,7 @@ if (cmd === "equip") {
         } catch (err) {
           console.error("Lỗi cộng XP Voice:", err);
         }
-      }, 300000); // 300000ms = 5 phút
+      }, 60000); // 60000ms = 1 phút
 
       voiceTimers.set(userId, timer);
     }
