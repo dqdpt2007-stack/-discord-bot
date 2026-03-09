@@ -1,7 +1,9 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require("discord.js");
 const axios = require("axios");
+const googleTTS = require("google-tts-api");
 const Groq = require("groq-sdk");
+const { DisTube } = require("distube"); // Thêm thư viện nhạc
 
 // ===== CHECK ENV =====
 if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2) {
@@ -21,8 +23,8 @@ const bots = [
   {
     token: process.env.DISCORD_TOKEN_1,
     prefix: "^",
-    // Điền ID Discord của Vi (người được xài Bot 1) vào trong dấu ngoặc kép dưới đây
     allowedUsers: ["1320722786586722329"], 
+    lang: "ko",
     personality: `
 BOT 1
 Bạn là Woo
@@ -34,9 +36,9 @@ thường thêm các cảm xúc trong // // ví dụ // ngại ngùng //
   },
   {
     token: process.env.DISCORD_TOKEN_2,
-    prefix: "!!",
-    // Điền ID Discord của người được xài Bot 2 vào trong dấu ngoặc kép dưới đây
+    prefix: "!!", 
     allowedUsers: ["1473300330128080990"], 
+    lang: "ja",
     personality: `
 BOT 2
 Bạn là Kaworu
@@ -64,8 +66,37 @@ async function getAnimeGif(tag) {
 // ==========================================
 bots.forEach(config => {
   const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+    intents: [
+      GatewayIntentBits.Guilds, 
+      GatewayIntentBits.GuildMessages, 
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildVoiceStates // QUAN TRỌNG: Cần intent này để vào Voice
+    ]
   });
+
+  // ===== CẤU HÌNH NHẠC CHO TỪNG BOT =====
+  client.distube = new DisTube(client, {
+    leaveOnEmpty: true,
+    leaveOnFinish: false,
+    leaveOnStop: true,
+    emitNewSongOnly: true,
+  });
+
+  // Thông báo khi bắt đầu phát nhạc
+  client.distube.on("playSong", (queue, song) => {
+    queue.textChannel.send(`🎶 Anh đang mở bài: **${song.name}** - \`${song.formattedDuration}\` cho em nghe nè!`);
+  });
+
+  // Thông báo khi thêm vào hàng đợi
+  client.distube.on("addSong", (queue, song) => {
+    queue.textChannel.send(`✅ Đã thêm **${song.name}** vào danh sách chờ nha.`);
+  });
+
+  client.distube.on("error", (channel, e) => {
+    if (channel) channel.send(`❌ Anh gặp lỗi phát nhạc rồi: ${e.toString().slice(0, 1970)}`);
+    else console.error(e);
+  });
+  // ========================================
 
   client.once("ready", (c) => console.log(`✅ AI Bot online: ${c.user.tag}`));
 
@@ -75,20 +106,103 @@ bots.forEach(config => {
     const content = message.content;
     const prefix = config.prefix;
 
-    // Phải đúng prefix của bot AI thì mới xử lý tiếp
     if (!content.startsWith(prefix)) return;
 
-    // === KIỂM TRA QUYỀN SỬ DỤNG AI (DÀNH RIÊNG CHO TỪNG BOT) ===
+    // === KIỂM TRA QUYỀN ===
     const isAllowedUser = config.allowedUsers.includes(message.author.id);
     const isMod = message.member && (
       message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) || 
       message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)
     );
 
-    if (!isAllowedUser && !isMod) {
-      return; // Nếu không thuộc allowedUsers của riêng bot này và không phải Mod -> Bỏ qua
+    if (!isAllowedUser && !isMod) return; 
+
+    // ==========================================
+    // ===== LỆNH PHÁT NHẠC (MUSIC COMMANDS) ====
+    // ==========================================
+    
+    // 1. Lệnh PLAY
+    if (content.startsWith(prefix + "play ")) {
+      const voiceChannel = message.member?.voice?.channel;
+      if (!voiceChannel) return message.reply("Em phải vào phòng Voice trước thì anh mới mở nhạc được chứ!");
+      
+      const query = content.slice((prefix + "play ").length).trim();
+      if (!query) return message.reply("Em muốn nghe bài gì? Gửi tên bài hoặc link cho anh nha.");
+
+      message.reply(`🔍 Đang tìm bài **${query}** cho em nè...`);
+      try {
+        await client.distube.play(voiceChannel, query, {
+          member: message.member,
+          textChannel: message.channel,
+          message
+        });
+      } catch (e) {
+        message.channel.send(`❌ Khum mở được bài này rồi em ơi: \`${e.message}\``);
+      }
+      return;
     }
-    // =========================================================
+
+    // 2. Lệnh STOP
+    if (content === prefix + "stop") {
+      const queue = client.distube.getQueue(message);
+      if (!queue) return message.reply("Hiện tại anh đâu có mở bài nào đâu em.");
+      queue.stop();
+      return message.reply("⏹️ Anh tắt nhạc rồi nha. Khi nào muốn nghe lại cứ gọi anh.");
+    }
+
+    // 3. Lệnh SKIP
+    if (content === prefix + "skip") {
+      const queue = client.distube.getQueue(message);
+      if (!queue) return message.reply("Có bài nào đang phát đâu mà chuyển hỡi em.");
+      try {
+        if (queue.songs.length <= 1) {
+          queue.stop();
+          return message.reply("⏭️ Đã qua bài (Hết danh sách nên anh tắt nhạc nhé).");
+        } else {
+          await queue.skip();
+          return message.reply("⏭️ Anh qua bài tiếp theo nha.");
+        }
+      } catch (e) {
+        return message.reply(`❌ Lỗi khi chuyển bài: ${e.message}`);
+      }
+    }
+
+    // 4. Lệnh QUEUE
+    if (content === prefix + "queue") {
+      const queue = client.distube.getQueue(message);
+      if (!queue) return message.reply("Danh sách phát đang trống trơn à.");
+      const q = queue.songs
+        .map((song, i) => `${i === 0 ? "▶️ Đang phát:" : `**${i}.**`} ${song.name} - \`${song.formattedDuration}\``)
+        .slice(0, 10)
+        .join("\n");
+      
+      const qEmbed = new EmbedBuilder()
+        .setTitle("📜 Danh sách phát nhạc của chúng mình")
+        .setDescription(q)
+        .setColor("#FFB6C1")
+        .setFooter({ text: `Tổng cộng: ${queue.songs.length} bài hát` });
+      return message.reply({ embeds: [qEmbed] });
+    }
+// 5. Lệnh SAY (Mỗi bot 1 thứ tiếng)
+    if (content.startsWith(prefix + "say ")) {
+      const text = content.slice((prefix + "say ").length).trim();
+      const voiceChannel = message.member?.voice?.channel;
+
+      if (!text) return message.reply("Em muốn anh nói gì nào?");
+      if (!voiceChannel) return message.reply("Em vào Voice đi rồi anh rỉ tai cho nghe.");
+
+      try {
+        const url = googleTTS.getAudioUrl(text, { lang: config.lang, slow: false, host: "https://translate.google.com" });
+        await client.distube.play(voiceChannel, url, { member: message.member, textChannel: message.channel });
+      } catch (e) {
+        message.reply(`❌ Cổ họng anh bị sao á: ${e.message}`);
+      }
+      return;
+    }
+
+    // ==========================================
+    // ===== CÁC LỆNH AI CŨ CỦA BẠN DƯỚI NÀY ====
+    // ==========================================
 
     if (content === prefix + "hi") return message.reply("Anh chào em nha");
     if (content === prefix + "sleep") return message.reply("Ngủ ngon nha bé ngoan của anh");
@@ -136,9 +250,10 @@ bots.forEach(config => {
         .addFields(
           { name: "💬 Giao tiếp cơ bản", value: `\`${prefix}hi\` - Chào bot\n\`${prefix}sleep\` - Chúc bot ngủ ngon\n\`${prefix}love\` - Đo độ thiện cảm`, inline: false },
           { name: "🫂 Hành động (Có ảnh GIF)", value: `\`${prefix}hug\` - Ôm\n\`${prefix}pat\` - Xoa đầu\n\`${prefix}kiss\` - Hôn\n\`${prefix}blush\` - Ngại ngùng\n\`${prefix}hand\` - Nắm tay`, inline: false },
-          { name: "🤖 Tính năng AI", value: `\`${prefix}ai <nội dung>\` - Chat với AI\n\`${prefix}rep <id tin nhắn> <nội dung>\` - Nhờ bot reply tin nhắn`, inline: false }
+          { name: "🤖 Tính năng AI", value: `\`${prefix}ai <nội dung>\` - Chat với AI\n\`${prefix}rep <id tin nhắn> <nội dung>\` - Nhờ bot reply tin nhắn\n\`${prefix}say <nội dung>\` - Nhờ bot nói trong Voice`, inline: false }, // THÊM LỆNH SAY VÀO ĐÂY
+          { name: "🎵 Âm nhạc", value: `\`${prefix}play <tên/link>\` - Phát nhạc\n\`${prefix}stop\` - Tắt nhạc\n\`${prefix}skip\` - Qua bài\n\`${prefix}queue\` - Xem danh sách phát`, inline: false }
         )
-        .setFooter({ text: "Bot Tương Tác & Trí Tuệ Nhân Tạo" });
+        .setFooter({ text: "Bot Tương Tác & Phát Nhạc" });
       return message.reply({ embeds: [helpEmbed] });
     }
 

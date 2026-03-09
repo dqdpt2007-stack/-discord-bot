@@ -13,8 +13,9 @@
   "type": "commonjs",
   "dependencies": {
     "axios": "^1.13.6",
-    "discord.js": "^14.25.1",
+    "discord.js": "^13.17.1",
     "dotenv": "^17.3.1",
+    "google-tts-api": "^0.0.6",
     "groq-sdk": "^0.37.0",
     "openai": "^6.27.0",
     "pg": "^8.20.0"
