@@ -281,6 +281,91 @@ async function startLevelBot() {
         await pool.query("INSERT INTO guild_settings (guildid, lvl_channel) VALUES ($1, $2) ON CONFLICT (guildid) DO UPDATE SET lvl_channel = $2", [message.guild.id, channel.id]);
         return message.reply(`✅ Đã đặt kênh thông báo lên level tại: ${channel}`);
       }
+// ==========================================
+    // --- LỆNH CÂU CÁ (k!fish) ---
+    // ==========================================
+    if (content.startsWith("k!fish")) {
+      const now = Date.now();
+      
+      // Kiểm tra hồi chiêu (15 giây)
+      if (fishCooldown.has(id)) {
+        const expirationTime = fishCooldown.get(id) + 15000;
+        if (now < expirationTime) {
+          const timeLeft = ((expirationTime - now) / 1000).toFixed(1);
+          return message.reply(`🎣 Cá chưa cắn mồi đâu! Thử lại sau **${timeLeft}s** nữa nhé.`);
+        }
+      }
+      fishCooldown.set(id, now); // Lưu thời gian quăng cần
+
+      const roll = Math.random() * 100;
+      let rewardText = "";
+      let kcoinReward = 0;
+      let isBoost = false;
+
+      // 60% Câu trúng Rác (Giá bèo nhèo)
+      if (roll < 60) {
+        const trashes = [
+          { name: "🥾 Chiếc giày rách", min: 1, max: 10 },
+          { name: "🌿 Cụm rong biển", min: 2, max: 8 },
+          { name: "🦴 Bộ xương cá", min: 1, max: 5 },
+          { name: "🧴 Chai nhựa rỗng", min: 2, max: 10 }
+        ];
+        const item = trashes[Math.floor(Math.random() * trashes.length)];
+        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
+        rewardText = `**${item.name}** và bán ve chai được **${kcoinReward} Kcoin** 🗑️`;
+      } 
+      // 25% Câu trúng Cá Thường
+      else if (roll < 85) {
+        const commons = [
+          { name: "🐟 Cá Rô Đồng", min: 30, max: 80 },
+          { name: "🐠 Cá Chép", min: 50, max: 120 },
+          { name: "🐡 Cá Nóc", min: 80, max: 150 }
+        ];
+        const item = commons[Math.floor(Math.random() * commons.length)];
+        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
+        rewardText = `**${item.name}** và bán được **${kcoinReward} Kcoin**! 💵`;
+      }
+      // 5% Câu trúng Cá Hiếm
+      else if (roll < 90) {
+        const rares = [
+          { name: "🦈 Cá Mập Con", min: 300, max: 600 },
+          { name: "🐬 Cá Heo Xanh", min: 400, max: 800 }
+        ];
+        const item = rares[Math.floor(Math.random() * rares.length)];
+        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
+        rewardText = `**${item.name}** (Siêu Hiếm) và bán được tận **${kcoinReward} Kcoin**! ✨`;
+      }
+      // 5% Câu trúng Rương (Mở ra tiền)
+      else if (roll < 95) {
+        const chests = [
+          { name: "📦 Rương Cũ Kỹ", min: 1000, max: 2000 },
+          { name: "💎 Rương Bạc", min: 2000, max: 4000 }
+        ];
+        const item = chests[Math.floor(Math.random() * chests.length)];
+        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
+        rewardText = `**${item.name}**! Mở ra nhận được **${kcoinReward} Kcoin**! 🎉`;
+      }
+      // 5% Câu trúng Nước Tăng Lực (Boost XP)
+      else {
+        isBoost = true;
+        rewardText = `**🧪 Nước Tăng Lực Bò Húc**! Cả người bừng sức mạnh, bạn được **Boost x2 XP** trong 10 phút! ⚡`;
+      }
+
+      // Xử lý lưu Database
+      const data = await getLevel(id);
+      
+      if (isBoost) {
+        const tenMins = 10 * 60 * 1000;
+        // Đảm bảo nếu đang có boost từ trước thì cộng dồn thời gian
+        data.boost_until = Math.max(Date.now(), data.boost_until || 0) + tenMins; 
+      } else {
+        data.kcoin += kcoinReward;
+      }
+
+      await saveLevel(id, data);
+
+      return message.reply(`🎣 Bạn quăng cần xuống nước...\n💦 Kéo lên! Bạn đã câu được ${rewardText}`);
+    }
 
       // --- Lệnh Xem Shop ---
       if (cmd === "shop") {
@@ -907,11 +992,64 @@ if (cmd === "addreward") {
       }
     }, 60000);
 
-    voiceTimers.
+    // Chỗ này hồi nãy bạn bị lỡ tay xoá mất đoạn đuôi nè:
+    voiceTimers.set(userId, timer);
+  } // <--- Kết thúc hàm startVoiceTimer
+
+  // 2. TỰ ĐỘNG QUÉT VOICE KHI BOT VỪA RESTART
+  levelBot.once("ready", () => {
+    let restoredCount = 0;
+    // Lặp qua tất cả server bot tham gia
+    levelBot.guilds.cache.forEach(guild => {
+      // Lặp qua tất cả các thành viên đang ở trong Voice
+      guild.voiceStates.cache.forEach(voiceState => {
+        if (voiceState.member?.user?.bot) return;
+
+        // Check xem họ có đang bật mic đàng hoàng không
+        const isValid = voiceState.channelId 
+          && !voiceState.selfDeaf && !voiceState.serverDeaf 
+          && !voiceState.selfMute && !voiceState.serverMute;
+
+        if (isValid) {
+          startVoiceTimer(voiceState.id, guild);
+          restoredCount++;
+        }
+      });
+    });
+    if (restoredCount > 0) {
+      console.log(`🔄 Đã quét và tự động khôi phục cày Voice cho ${restoredCount} người dùng!`);
+    }
+  });
+
+  // 3. XỬ LÝ KHI CÓ NGƯỜI VÀO/RA/TẮT MIC (HOẠT ĐỘNG BÌNH THƯỜNG)
+  levelBot.on("voiceStateUpdate", (oldState, newState) => {
+    const userId = newState.id;
+    if (newState.member?.user?.bot) return;
+
+    const isValidNow = newState.channelId 
+      && !newState.selfDeaf && !newState.serverDeaf 
+      && !newState.selfMute && !newState.serverMute;
+
+    const wasValidBefore = oldState.channelId 
+      && !oldState.selfDeaf && !oldState.serverDeaf 
+      && !oldState.selfMute && !oldState.serverMute;
+
+    // KỊCH BẢN 1: Bắt đầu tính giờ (nhảy vào kênh hoặc vừa bật lại mic)
+    if (isValidNow && !wasValidBefore) {
+      startVoiceTimer(userId, newState.guild);
+    } 
+    // KỊCH BẢN 2: Dừng tính giờ (out kênh, tắt mic, hoặc điếc)
+    else if (!isValidNow && wasValidBefore) {
+      if (voiceTimers.has(userId)) {
+        clearInterval(voiceTimers.get(userId));
+        voiceTimers.delete(userId);
+      }
+    }
+  });
 
   // Khởi động bot
   levelBot.login(LEVEL_TOKEN);
-}
+} // <--- Ngoặc đóng siêu quan trọng của hàm startLevelBot
 
 // Bắt đầu chạy hệ thống
 startLevelBot();
