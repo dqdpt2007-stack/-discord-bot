@@ -1,6 +1,6 @@
 require("dotenv").config();
-const ffmpeg = require('ffmpeg-static'); // Thêm dòng này
-process.env.FFMPEG_PATH = ffmpeg;        // Thêm dòng này
+const ffmpeg = require('ffmpeg-static');
+process.env.FFMPEG_PATH = ffmpeg;
 
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require("discord.js");
 const axios = require("axios");
@@ -8,7 +8,7 @@ const googleTTS = require("google-tts-api");
 const Groq = require("groq-sdk");
 const { DisTube } = require("distube"); 
 const { YtDlpPlugin } = require("@distube/yt-dlp");
-const { DirectLinkPlugin } = require("@distube/direct-link"); // Thêm dòng này
+const { DirectLinkPlugin } = require("@distube/direct-link");
 
 // ===== KIỂM TRA BIẾN MÔI TRƯỜNG =====
 if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2 || !process.env.GROQ_API_KEY) {
@@ -57,13 +57,13 @@ bots.forEach(config => {
     ]
   });
 
-  // ===== CẤU HÌNH NHẠC (ĐÃ FIX) =====
+  // ===== CẤU HÌNH NHẠC =====
   client.distube = new DisTube(client, {
     emitNewSongOnly: true,
     savePreviousSongs: false,
     plugins: [
       new YtDlpPlugin(),
-      new DirectLinkPlugin() // Phải có cái này lệnh SAY mới chạy được
+      new DirectLinkPlugin()
     ]
   });
 
@@ -90,17 +90,20 @@ bots.forEach(config => {
     const prefix = config.prefix;
     if (!content.startsWith(prefix)) return;
 
+    const args = content.slice(prefix.length).trim().split(/ +/g);
+    const command = args.shift().toLowerCase();
+
     // Check quyền User hoặc Mod
     const isAllowedUser = config.allowedUsers.includes(message.author.id);
     const isMod = message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages);
     if (!isAllowedUser && !isMod) return; 
 
     // --- 1. LỆNH PLAY ---
-    if (content.startsWith(prefix + "play ")) {
+    if (command === "play") {
       const voiceChannel = message.member?.voice?.channel;
       if (!voiceChannel) return message.reply("Em vào phòng Voice trước thì anh mới mở nhạc được chứ!");
       
-      const query = content.slice((prefix + "play ").length).trim();
+      const query = args.join(" ");
       if (!query) return message.reply("Em muốn nghe bài gì? Gửi tên bài hoặc link cho anh nha.");
 
       message.reply(`🔍 Đang tìm bài **${query}** cho em nè...`);
@@ -117,7 +120,7 @@ bots.forEach(config => {
     }
 
     // --- 2. LỆNH STOP ---
-    if (content === prefix + "stop") {
+    if (command === "stop") {
       const queue = client.distube.getQueue(message);
       if (!queue) return message.reply("Hiện tại anh đâu có mở bài nào đâu em.");
       queue.stop();
@@ -125,7 +128,7 @@ bots.forEach(config => {
     }
 
     // --- 3. LỆNH SKIP ---
-    if (content === prefix + "skip") {
+    if (command === "skip") {
       const queue = client.distube.getQueue(message);
       if (!queue) return message.reply("Có bài nào đang phát đâu mà chuyển hỡi em.");
       try {
@@ -140,7 +143,7 @@ bots.forEach(config => {
     }
 
     // --- 4. LỆNH QUEUE ---
-    if (content === prefix + "queue") {
+    if (command === "queue") {
       const queue = client.distube.getQueue(message);
       if (!queue) return message.reply("Danh sách phát đang trống trơn à.");
       const q = queue.songs
@@ -153,20 +156,18 @@ bots.forEach(config => {
       return message.reply({ embeds: [qEmbed] });
     }
 
-   // --- 5. LỆNH SAY (TTS) ---
-    if (content.startsWith(prefix + "say ")) {
-      const text = content.slice((prefix + "say ").length).trim();
+    // --- 5. LỆNH SAY (TTS) ---
+    if (command === "say") {
+      const text = args.join(" ");
       const voiceChannel = message.member?.voice?.channel;
       if (!text || !voiceChannel) return message.reply("Em vào voice rỉ tai anh nói gì đi!");
 
       try {
         const url = googleTTS.getAudioUrl(text, { lang: config.lang, slow: false, host: "https://translate.google.com" });
-        
-        // Sửa dòng play bên dưới:
         await client.distube.play(voiceChannel, url, { 
           member: message.member, 
           textChannel: message.channel,
-          skip: true // Lệnh say sẽ phát ngay lập tức (chen ngang nhạc)
+          skip: true 
         });
       } catch (e) { 
         console.error(e);
@@ -176,11 +177,11 @@ bots.forEach(config => {
     }
 
     // --- 6. GIAO TIẾP CƠ BẢN ---
-    if (content === prefix + "hi") return message.reply("Anh chào em nha");
-    if (content === prefix + "sleep") return message.reply("Ngủ ngon nha bé ngoan của anh");
+    if (command === "hi") return message.reply("Anh chào em nha");
+    if (command === "sleep") return message.reply("Ngủ ngon nha bé ngoan của anh");
 
     // --- 7. LỆNH LOVE ---
-    if (content === prefix + "love") {
+    if (command === "love") {
       const percent = Math.floor(Math.random() * 101);
       let gifTag = percent < 10 ? "slap" : percent < 35 ? "handhold" : percent < 50 ? "pat" : percent < 80 ? "hug" : percent < 99 ? "kiss" : "blush";
       let gif = await getAnimeGif(gifTag);
@@ -203,8 +204,8 @@ bots.forEach(config => {
     }
 
     // --- 8. LỆNH AI CHAT ---
-    if (content.startsWith(prefix + "ai ")) {
-      const prompt = content.slice((prefix + "ai ").length).trim();
+    if (command === "ai") {
+      const prompt = args.join(" ");
       if (!prompt) return message.reply("Nói gì đi em...");
       try {
         const chat = await groq.chat.completions.create({
@@ -217,12 +218,11 @@ bots.forEach(config => {
 
     // --- 9. HÀNH ĐỘNG GIF ---
     const actions = ["pat", "hug", "kiss", "blush", "hand"];
-    const currentAction = content.replace(prefix, "");
-    if (actions.includes(currentAction)) {
-      const gif = await getAnimeGif(currentAction === "hand" ? "handhold" : currentAction);
+    if (actions.includes(command)) {
+      const gif = await getAnimeGif(command === "hand" ? "handhold" : command);
       try {
         const chat = await groq.chat.completions.create({
-          messages: [{ role: "system", content: config.personality }, { role: "user", content: `Anh đang ${currentAction} em.` }],
+          messages: [{ role: "system", content: config.personality }, { role: "user", content: `Anh đang ${command} em.` }],
           model: "llama-3.3-70b-versatile"
         });
         const embed = new EmbedBuilder().setDescription(chat.choices[0].message.content).setColor("#ffcc99").setImage(gif);
@@ -230,10 +230,11 @@ bots.forEach(config => {
       } catch (e) {
         if (gif) return message.reply({ embeds: [new EmbedBuilder().setImage(gif).setColor("#ffcc99")] });
       }
+      return;
     }
 
     // --- 10. LỆNH HELP ---
-    if (content === prefix + "help") {
+    if (command === "help") {
       const helpEmbed = new EmbedBuilder()
         .setTitle("📜 Danh Sách Lệnh AI Bot")
         .setColor("#00BFFF")
@@ -246,5 +247,5 @@ bots.forEach(config => {
     }
   });
 
-  client.login(config.token).catch(err => console.error(`❌ Không thể login Bot với token: ${config.token.substring(0, 10)}...`));
+  client.login(config.token).catch(err => console.error(`❌ Không thể login Bot!`));
 });
