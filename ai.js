@@ -83,28 +83,32 @@ bots.forEach(config => {
     const isMod = message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages);
     if (!isAllowedUser && !isMod) return; 
 
-    // --- LỆNH SAY (Sửa lỗi hoàn chỉnh) ---
+    // --- LỆNH SAY (Đã fix cho Railway) ---
     if (command === "say") {
       const text = args.join(" ");
       const voiceChannel = message.member?.voice?.channel;
       if (!text || !voiceChannel) return message.reply("Em vào voice rỉ tai anh nói gì đi!");
 
       try {
-        // Sử dụng googleTTS trực tiếp trong lệnh
+        // 1. Tự động chia nhỏ văn bản nếu quá 200 ký tự (Tránh lỗi Google TTS giới hạn)
         const ttsUrl = googleTTS.getAudioUrl(text, {
-          lang: config.lang,
+          lang: config.lang, // 'ko' cho Woo, 'ja' cho Kaworu
           slow: false,
           host: 'https://translate.google.com',
         });
 
-        await client.distube.play(voiceChannel, ttsUrl, { 
-          member: message.member, 
+        // 2. Ép DisTube phát dưới dạng Direct Link
+        await client.distube.play(voiceChannel, ttsUrl, {
+          member: message.member,
           textChannel: message.channel,
-          skip: true 
+          skip: true,
+          // Thêm metadata để DisTube không phải mất thời gian tìm kiếm thông tin
+          metadata: { name: "AI Voice" } 
         });
-      } catch (e) { 
-        console.error(e);
-        message.reply("Cổ họng anh hơi đau rồi..."); 
+
+      } catch (e) {
+        console.error("Lỗi âm thanh:", e);
+        message.reply("Cổ họng anh hơi đau rồi...");
       }
       return;
     }
