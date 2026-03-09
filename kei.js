@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require("discord.js");
 const { Pool } = require("pg");
-
+const fishCooldown = new Map();
 const cooldown = new Map();
 const guildPrefixCache = new Map();
 
@@ -241,6 +241,7 @@ async function startLevelBot() {
       const args = content.slice(prefix.length).trim().split(/ +/);
       const cmd = args.shift().toLowerCase();
 
+
       // --- Lệnh Help ---
       if (cmd === "help") {
         const helpEmbed = new EmbedBuilder()
@@ -248,12 +249,65 @@ async function startLevelBot() {
           .setColor("#5865F2")
           .setDescription(`Prefix hiện tại của server là: **${prefix}**`)
           .addFields(
-            { name: "🏆 Cày Cấp & Tiền", value: `\`${prefix}profile\` - Xem hồ sơ\n\`${prefix}cash\` - Xem tiền\n\`${prefix}top\` - Bảng xếp hạng\n\`${prefix}daily\` - Nhận thưởng mỗi 24h\n\`${prefix}cf <tiền>\` - Chơi tung đồng xu\n\`${prefix}quest\` - Xem và nhận thưởng nhiệm vụ hằng ngày` },
+            { name: "🏆 Cày Cấp & Tiền", value: `\`${prefix}profile\` - Xem hồ sơ\n\`${prefix}cash\` - Xem tiền\n\`${prefix}top\` - Bảng xếp hạng\n\`${prefix}fish\` - Câu cá\n\`${prefix}daily\` - Nhận thưởng mỗi 24h\n\`${prefix}cf <tiền>\` - Chơi tung đồng xu\n\`${prefix}quest\` - Xem và nhận thưởng nhiệm vụ hằng ngày` },
             { name: "🛍️ Shop & Gacha", value: `\`${prefix}shop\` - Xem cửa hàng\n\`${prefix}buy <mã>\` - Mua vật phẩm\n\`${prefix}inv\` - Xem túi đồ\n\`${prefix}use <stt> [SL]\` - Mở rương gacha\n\`${prefix}equip <stt>\` - Mặc/tháo đồ\n\`${prefix}giveitem @user <stt>\` - Tặng đồ\n\`${prefix}give @user <tiền>\` - Chuyển Kcoin` },
             { name: "⚙️ Cài đặt", value: `\`${prefix}prefix <ký tự mới>\` - Đổi prefix\n\`${prefix}setchannel\` - Đặt kênh báo level` }
           )
           .setFooter({ text: "Tip: Chat hoặc treo Voice đều được nhận ngẫu nhiên XP & Kcoin nhé!" });
         return message.reply({ embeds: [helpEmbed] });
+      }
+// --- LỆNH CÂU CÁ (k!fish) ---
+      if (cmd === "fish") {
+        // Kiểm tra fishCooldown (Map này phải khai báo ở ĐẦU FILE - ngoài messageCreate)
+        if (typeof fishCooldown === 'undefined') {
+           return message.reply("⚠️ Lỗi: Chưa khai báo `fishCooldown` ở đầu file!");
+        }
+
+        if (fishCooldown.has(id)) {
+          const expirationTime = fishCooldown.get(id) + 15000;
+          if (now < expirationTime) {
+            const timeLeft = ((expirationTime - now) / 1000).toFixed(1);
+            return message.reply(`🎣 Cá chưa cắn mồi đâu! Thử lại sau **${timeLeft}s** nhé.`);
+          }
+        }
+        fishCooldown.set(id, now);
+
+        const roll = Math.random() * 100;
+        let rewardText = "";
+        let kcoinReward = 0;
+        let isBoost = false;
+
+        if (roll < 60) {
+          const trashes = ["🥾 Chiếc giày rách", "🌿 Cụm rong biển", "🦴 Bộ xương cá", "🧴 Chai nhựa rỗng"];
+          const item = trashes[Math.floor(Math.random() * trashes.length)];
+          kcoinReward = Math.floor(Math.random() * 10) + 1;
+          rewardText = `**${item}** và bán ve chai được **${kcoinReward} Kcoin** 🗑️`;
+        } else if (roll < 85) {
+          const commons = ["🐟 Cá Rô Đồng", "🐠 Cá Chép", "🐡 Cá Nóc"];
+          const item = commons[Math.floor(Math.random() * commons.length)];
+          kcoinReward = Math.floor(Math.random() * 100) + 30;
+          rewardText = `**${item}** và bán được **${kcoinReward} Kcoin**! 💵`;
+        } else if (roll < 90) {
+          const rares = ["🦈 Cá Mập Con", "🐬 Cá Heo Xanh"];
+          const item = rares[Math.floor(Math.random() * rares.length)];
+          kcoinReward = Math.floor(Math.random() * 500) + 300;
+          rewardText = `**${item}** (Hiếm) và bán được tận **${kcoinReward} Kcoin**! ✨`;
+        } else if (roll < 95) {
+          kcoinReward = Math.floor(Math.random() * 1000) + 1000;
+          rewardText = `**📦 Rương Cũ Kỹ**! Mở ra nhận được **${kcoinReward.toLocaleString()} Kcoin**! 🎉`;
+        } else {
+          isBoost = true;
+          rewardText = `**🧪 Nước Tăng Lực Bò Húc**! Bạn được **Boost x2 XP** trong 10 phút! ⚡`;
+        }
+
+        const data = await getLevel(id);
+        if (isBoost) {
+          data.boost_until = Math.max(Date.now(), data.boost_until || 0) + 600000;
+        } else {
+          data.kcoin += kcoinReward;
+        }
+        await saveLevel(id, data);
+        return message.reply(`🎣 Bạn quăng cần xuống nước...\n💦 Kéo lên! Bạn đã câu được ${rewardText}`);
       }
 
       // --- Lệnh Đổi Prefix ---
@@ -282,91 +336,7 @@ async function startLevelBot() {
         return message.reply(`✅ Đã đặt kênh thông báo lên level tại: ${channel}`);
       }
 // ==========================================
-    // --- LỆNH CÂU CÁ (k!fish) ---
-    // ==========================================
-    if (cmd === "fish") {
-      const now = Date.now();
-      
-      // Kiểm tra hồi chiêu (15 giây)
-      if (fishCooldown.has(id)) {
-        const expirationTime = fishCooldown.get(id) + 15000;
-        if (now < expirationTime) {
-          const timeLeft = ((expirationTime - now) / 1000).toFixed(1);
-          return message.reply(`🎣 Cá chưa cắn mồi đâu! Thử lại sau **${timeLeft}s** nữa nhé.`);
-        }
-      }
-      fishCooldown.set(id, now); // Lưu thời gian quăng cần
-
-      const roll = Math.random() * 100;
-      let rewardText = "";
-      let kcoinReward = 0;
-      let isBoost = false;
-
-      // 60% Câu trúng Rác (Giá bèo nhèo)
-      if (roll < 60) {
-        const trashes = [
-          { name: "🥾 Chiếc giày rách", min: 1, max: 10 },
-          { name: "🌿 Cụm rong biển", min: 2, max: 8 },
-          { name: "🦴 Bộ xương cá", min: 1, max: 5 },
-          { name: "🧴 Chai nhựa rỗng", min: 2, max: 10 }
-        ];
-        const item = trashes[Math.floor(Math.random() * trashes.length)];
-        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
-        rewardText = `**${item.name}** và bán ve chai được **${kcoinReward} Kcoin** 🗑️`;
-      } 
-      // 25% Câu trúng Cá Thường
-      else if (roll < 85) {
-        const commons = [
-          { name: "🐟 Cá Rô Đồng", min: 30, max: 80 },
-          { name: "🐠 Cá Chép", min: 50, max: 120 },
-          { name: "🐡 Cá Nóc", min: 80, max: 150 }
-        ];
-        const item = commons[Math.floor(Math.random() * commons.length)];
-        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
-        rewardText = `**${item.name}** và bán được **${kcoinReward} Kcoin**! 💵`;
-      }
-      // 5% Câu trúng Cá Hiếm
-      else if (roll < 90) {
-        const rares = [
-          { name: "🦈 Cá Mập Con", min: 300, max: 600 },
-          { name: "🐬 Cá Heo Xanh", min: 400, max: 800 }
-        ];
-        const item = rares[Math.floor(Math.random() * rares.length)];
-        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
-        rewardText = `**${item.name}** (Siêu Hiếm) và bán được tận **${kcoinReward} Kcoin**! ✨`;
-      }
-      // 5% Câu trúng Rương (Mở ra tiền)
-      else if (roll < 95) {
-        const chests = [
-          { name: "📦 Rương Cũ Kỹ", min: 1000, max: 2000 },
-          { name: "💎 Rương Bạc", min: 2000, max: 4000 }
-        ];
-        const item = chests[Math.floor(Math.random() * chests.length)];
-        kcoinReward = Math.floor(Math.random() * (item.max - item.min + 1)) + item.min;
-        rewardText = `**${item.name}**! Mở ra nhận được **${kcoinReward} Kcoin**! 🎉`;
-      }
-      // 5% Câu trúng Nước Tăng Lực (Boost XP)
-      else {
-        isBoost = true;
-        rewardText = `**🧪 Nước Tăng Lực Bò Húc**! Cả người bừng sức mạnh, bạn được **Boost x2 XP** trong 10 phút! ⚡`;
-      }
-
-      // Xử lý lưu Database
-      const data = await getLevel(id);
-      
-      if (isBoost) {
-        const tenMins = 10 * 60 * 1000;
-        // Đảm bảo nếu đang có boost từ trước thì cộng dồn thời gian
-        data.boost_until = Math.max(Date.now(), data.boost_until || 0) + tenMins; 
-      } else {
-        data.kcoin += kcoinReward;
-      }
-
-      await saveLevel(id, data);
-
-      return message.reply(`🎣 Bạn quăng cần xuống nước...\n💦 Kéo lên! Bạn đã câu được ${rewardText}`);
-    }
-
+   
       // --- Lệnh Xem Shop ---
       if (cmd === "shop") {
         const shopEmbed = new EmbedBuilder()
