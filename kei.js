@@ -284,7 +284,7 @@ async function startLevelBot() {
 // ==========================================
     // --- LỆNH CÂU CÁ (k!fish) ---
     // ==========================================
-    if (cmd === "fish")) {
+    if (cmd === "fish") {
       const now = Date.now();
       
       // Kiểm tra hồi chiêu (15 giây)
