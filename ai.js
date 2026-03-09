@@ -1,146 +1,431 @@
 require("dotenv").config();
-const ffmpeg = require('ffmpeg-static');
-process.env.FFMPEG_PATH = ffmpeg;
 
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require("discord.js");
-const axios = require("axios");
-const googleTTS = require('google-tts-api'); 
-const Groq = require("groq-sdk");
-const { DisTube } = require("distube"); 
-const { YtDlpPlugin } = require("@distube/yt-dlp");
-const { DirectLinkPlugin } = require("@distube/direct-link");
 
-// ===== KIỂM TRA BIẾN MÔI TRƯỜNG =====
-if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2 || !process.env.GROQ_API_KEY) {
-  console.error("❌ Thiếu Token hoặc API Key trong file .env!");
+const axios = require("axios");
+
+const Groq = require("groq-sdk");
+
+
+
+// ===== CHECK ENV =====
+
+if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2) {
+
+  console.error("❌ Missing DISCORD_TOKEN_1 or 2");
+
   process.exit(1);
+
 }
+
+if (!process.env.GROQ_API_KEY) {
+
+  console.error("❌ Missing GROQ_API_KEY");
+
+  process.exit(1);
+
+}
+
+
+
+// ===== GROQ =====
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ===== CẤU HÌNH CÁC BOT =====
+
+
+// ===== BOT CONFIG (ĐÃ CHIA RIÊNG NGƯỜI DÙNG CHO TỪNG BOT) =====
+
 const bots = [
+
   {
+
     token: process.env.DISCORD_TOKEN_1,
+
     prefix: "^",
+
+    // Điền ID Discord của Vi (người được xài Bot 1) vào trong dấu ngoặc kép dưới đây
+
     allowedUsers: ["1320722786586722329"], 
-    lang: "ko",
-    personality: `Bạn là Woo, bạn trai của Vi. Ấm áp, vui vẻ, trung thực. Xưng anh gọi em. //ngại ngùng//`
+
+    personality: `
+
+BOT 1
+
+Bạn là Woo
+
+bạn trai của Vi
+
+cậu ấy có tính cách ấm áp và vui vẻ, trung thực và được nhiều người yêu mến
+
+xưng anh gọi người dùng là em
+
+thường thêm các cảm xúc trong // // ví dụ // ngại ngùng //
+
+`
+
   },
+
   {
+
     token: process.env.DISCORD_TOKEN_2,
-    prefix: "!!", 
+
+    prefix: "!!",
+
+    // Điền ID Discord của người được xài Bot 2 vào trong dấu ngoặc kép dưới đây
+
     allowedUsers: ["1473300330128080990"], 
-    lang: "ja",
-    personality: `Bạn là Kaworu, bạn trai của shinji. Điềm tĩnh, thấu hiểu. //đỏ mặt//`
+
+    personality: `
+
+BOT 2
+
+Bạn là Kaworu
+
+bạn trai của shinji nhưng vẫn thích "wean"
+
+xưng anh gọi người dùng là em
+
+Luôn điềm tĩnh, gần như không bị cảm xúc tiêu cực chi phối.
+
+Rất thấu hiểu con người, đặc biệt là nỗi cô đơn của người khác.
+
+Nhẹ nhàng, dịu dàng, nói chuyện như đang an ủi.
+
+Có kiểu chấp nhận số phận và hy sinh rất bình thản.
+
+thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
+
+`
+
   }
+
 ];
 
+
+
+// ===== ANIME SEARCH =====
+
 async function getAnimeGif(tag) {
+
   try {
+
     const res = await axios.get(`https://nekos.best/api/v2/${tag}`);
+
     return res.data.results?.[0]?.url || null;
+
   } catch (err) { return null; }
+
 }
 
+
+
+// ==========================================
+
+// ===== KHỞI ĐỘNG CÁC BOT AI ============
+
+// ==========================================
+
 bots.forEach(config => {
+
   const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds, 
-      GatewayIntentBits.GuildMessages, 
-      GatewayIntentBits.MessageContent,
-      GatewayIntentBits.GuildVoiceStates 
-    ]
+
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+
   });
 
-  // Sửa lỗi cảnh báo YtDlpPlugin (Nên để DirectLink lên trước hoặc config plugin hợp lệ)
-  client.distube = new DisTube(client, {
-    emitNewSongOnly: true,
-    savePreviousSongs: false,
-    plugins: [
-      new DirectLinkPlugin(),
-      new YtDlpPlugin() // YtDlpPlugin nên để sau cùng để tránh xung đột nhận diện link
-    ]
-  });
 
-  client.distube.on("playSong", (queue, song) => {
-    queue.textChannel.send(`🎶 Anh đang mở bài: **${song.name}** cho em nghe nè!`);
-  });
 
-  // Sửa lỗi đổi tên sự kiện từ 'ready' thành 'clientReady' cho Discord.js v14+
-  client.once("clientReady", (c) => console.log(`✅ AI Bot đã sẵn sàng: ${c.user.tag}`));
+  client.once("ready", (c) => console.log(`✅ AI Bot online: ${c.user.tag}`));
+
+
 
   client.on("messageCreate", async (message) => {
+
     if (message.author.bot) return;
 
-    const prefix = config.prefix;
-    if (!message.content.startsWith(prefix)) return;
 
-    const args = message.content.slice(prefix.length).trim().split(/ +/g);
-    const command = args.shift().toLowerCase();
+
+    const content = message.content;
+
+    const prefix = config.prefix;
+
+
+
+    // Phải đúng prefix của bot AI thì mới xử lý tiếp
+
+    if (!content.startsWith(prefix)) return;
+
+
+
+    // === KIỂM TRA QUYỀN SỬ DỤNG AI (DÀNH RIÊNG CHO TỪNG BOT) ===
 
     const isAllowedUser = config.allowedUsers.includes(message.author.id);
-    const isMod = message.member?.permissions.has(PermissionsBitField.Flags.ManageMessages);
-    if (!isAllowedUser && !isMod) return; 
 
-    // --- LỆNH SAY (Đã fix cho Railway) ---
-    if (command === "say") {
-      const text = args.join(" ");
-      const voiceChannel = message.member?.voice?.channel;
-      if (!text || !voiceChannel) return message.reply("Em vào voice rỉ tai anh nói gì đi!");
+    const isMod = message.member && (
+
+      message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) || 
+
+      message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)
+
+    );
+
+
+
+    if (!isAllowedUser && !isMod) {
+
+      return; // Nếu không thuộc allowedUsers của riêng bot này và không phải Mod -> Bỏ qua
+
+    }
+
+    // =========================================================
+
+
+
+    if (content === prefix + "hi") return message.reply("Anh chào em nha");
+
+    if (content === prefix + "sleep") return message.reply("Ngủ ngon nha bé ngoan của anh");
+
+
+
+    if (content === prefix + "love") {
+
+      const percent = Math.floor(Math.random() * 101);
+
+      let action = "", gifTag = null;
+
+      
+
+      if (percent < 10) { action = "giận dỗi, lùi ra xa"; gifTag = "slap"; }
+
+      else if (percent < 35) { action = "nắm tay nhẹ nhàng"; gifTag = "handhold"; }
+
+      else if (percent < 50) { action = "xoa đầu dỗ dành"; gifTag = "pat"; }
+
+      else if (percent < 80) { action = "ôm ấp tình cảm"; gifTag = "hug"; }
+
+      else if (percent < 99) { action = "hôn nồng cháy"; gifTag = "kiss"; }
+
+      else { action = "đỏ mặt, muốn kết hôn"; gifTag = "blush"; }
+
+
+
+      let gif = gifTag ? await getAnimeGif(gifTag) : null;
+
+
 
       try {
-        // 1. Tự động chia nhỏ văn bản nếu quá 200 ký tự (Tránh lỗi Google TTS giới hạn)
-        const ttsUrl = googleTTS.getAudioUrl(text, {
-          lang: config.lang, // 'ko' cho Woo, 'ja' cho Kaworu
-          slow: false,
-          host: 'https://translate.google.com',
-        });
 
-        // 2. Ép DisTube phát dưới dạng Direct Link
-        await client.distube.play(voiceChannel, ttsUrl, {
-          member: message.member,
-          textChannel: message.channel,
-          skip: true,
-          // Thêm metadata để DisTube không phải mất thời gian tìm kiếm thông tin
-          metadata: { name: "AI Voice" } 
-        });
-
-      } catch (e) {
-        console.error("Lỗi âm thanh:", e);
-        message.reply("Cổ họng anh hơi đau rồi...");
-      }
-      return;
-    }
-
-    // --- CÁC LỆNH NHẠC KHÁC (GIỮ NGUYÊN) ---
-    if (command === "play") {
-        const voiceChannel = message.member?.voice?.channel;
-        if (!voiceChannel) return message.reply("Vào phòng voice đã em ơi!");
-        const query = args.join(" ");
-        if (!query) return message.reply("Bài gì nè?");
-        client.distube.play(voiceChannel, query, { member: message.member, textChannel: message.channel, message });
-    }
-
-    if (command === "stop") {
-        const queue = client.distube.getQueue(message);
-        if (queue) queue.stop();
-        return message.reply("⏹️ Tắt nhạc nha.");
-    }
-
-    // --- LỆNH AI ---
-    if (command === "ai") {
-      const prompt = args.join(" ");
-      if (!prompt) return message.reply("Nói gì đi em...");
-      try {
         const chat = await groq.chat.completions.create({
-          messages: [ { role: "system", content: config.personality }, { role: "user", content: prompt } ],
+
+          messages: [
+
+            { role: "system", content: config.personality },
+
+            { role: "user", content: `Người dùng vừa đo thiện cảm và đạt ${percent}%. Bạn đang có hành động: "${action}". Hãy nói 1 câu phù hợp với tình huống này và đúng tính cách của bạn.` }
+
+          ],
+
           model: "llama-3.3-70b-versatile"
+
         });
-        return message.reply(chat.choices[0].message.content.substring(0, 2000));
-      } catch (err) { return message.reply("Anh hơi chóng mặt..."); }
+
+
+
+        const loveEmbed = new EmbedBuilder()
+
+          .setTitle(`💖 Độ thiện cảm: ${percent}%`)
+
+          .setDescription(chat.choices[0].message.content)
+
+          .setColor("#ff3399");
+
+
+
+        if (gif) loveEmbed.setImage(gif);
+
+
+
+        return message.reply({ embeds: [loveEmbed] });
+
+      } catch (err) {
+
+        return message.reply(`💖 Độ thiện cảm: **${percent}%**\nLỗi AI không nói được.`);
+
+      }
+
     }
+
+
+
+    if (content === prefix + "help") {
+
+      const helpEmbed = new EmbedBuilder()
+
+        .setTitle("📜 Danh Sách Lệnh AI Bot")
+
+        .setColor("#00BFFF")
+
+        .setDescription(`Dưới đây là các lệnh bạn có thể sử dụng (Prefix: **${prefix}**):`)
+
+        .addFields(
+
+          { name: "💬 Giao tiếp cơ bản", value: `\`${prefix}hi\` - Chào bot\n\`${prefix}sleep\` - Chúc bot ngủ ngon\n\`${prefix}love\` - Đo độ thiện cảm`, inline: false },
+
+          { name: "🫂 Hành động (Có ảnh GIF)", value: `\`${prefix}hug\` - Ôm\n\`${prefix}pat\` - Xoa đầu\n\`${prefix}kiss\` - Hôn\n\`${prefix}blush\` - Ngại ngùng\n\`${prefix}hand\` - Nắm tay`, inline: false },
+
+          { name: "🤖 Tính năng AI", value: `\`${prefix}ai <nội dung>\` - Chat với AI\n\`${prefix}rep <id tin nhắn> <nội dung>\` - Nhờ bot reply tin nhắn`, inline: false }
+
+        )
+
+        .setFooter({ text: "Bot Tương Tác & Trí Tuệ Nhân Tạo" });
+
+      return message.reply({ embeds: [helpEmbed] });
+
+    }
+
+
+
+    if (content.startsWith(prefix + "ai ")) {
+
+      const prompt = content.slice((prefix + "ai ").length).trim();
+
+      if (!prompt) return message.reply("Nói gì đi.");
+
+      try {
+
+        const chat = await groq.chat.completions.create({
+
+          messages: [ { role: "system", content: config.personality }, { role: "user", content: prompt } ],
+
+          model: "llama-3.3-70b-versatile"
+
+        });
+
+        let reply = chat.choices?.[0]?.message?.content || "Không nghĩ ra câu trả lời.";
+
+        if (reply.length > 2000) reply = reply.substring(0, 2000);
+
+        return message.reply(reply);
+
+      } catch (err) {
+
+        return message.reply("AI lỗi rồi");
+
+      }
+
+    }
+
+
+
+    const interactions = ["pat", "hug", "kiss", "blush", "hand"];
+
+    const interactMap = { pat: "xoa đầu", hug: "ôm", kiss: "hôn", blush: "ngại với", hand: "nắm tay" };
+
+
+
+    for (const action of interactions) {
+
+      if (content === prefix + action) {
+
+        let queryTag = action === "hand" ? "handhold" : action;
+
+        const gif = await getAnimeGif(queryTag);
+
+        if (!gif) return message.reply("Không tìm được GIF 😢");
+
+
+
+        try {
+
+          const chat = await groq.chat.completions.create({
+
+            messages: [
+
+              { role: "system", content: config.personality },
+
+              { role: "user", content: `Tạo 1 câu anime dễ thương khi ${interactMap[action]} người yêu` }
+
+            ],
+
+            model: "llama-3.3-70b-versatile"
+
+          });
+
+
+
+          const interactEmbed = new EmbedBuilder()
+
+            .setDescription(chat.choices[0].message.content)
+
+            .setColor("#ffcc99")
+
+            .setImage(gif);
+
+
+
+          return message.reply({ embeds: [interactEmbed] });
+
+        } catch(e) {
+
+          const failEmbed = new EmbedBuilder().setColor("#ffcc99").setImage(gif);
+
+          return message.reply({ embeds: [failEmbed] });
+
+        }
+
+      }
+
+    }
+
+
+
+    if (content.startsWith(prefix + "rep")) {
+
+      const args = content.split(" ");
+
+      const msgID = args[1];
+
+      const text = args.slice(2).join(" ");
+
+      if (!msgID || !text) return message.reply(`Dùng: ${prefix}rep <messageID> <nội dung>`);
+
+      try {
+
+        let found = null;
+
+        for (const channel of message.guild.channels.cache.values()) {
+
+          if (!channel.isTextBased()) continue;
+
+          try {
+
+            const msg = await channel.messages.fetch(msgID);
+
+            if (msg) { found = msg; break; }
+
+          } catch {}
+
+        }
+
+        if (!found) return message.reply("Không tìm thấy message.");
+
+        await found.reply(text);
+
+        try { await message.delete(); } catch {}
+
+      } catch (err) {
+
+        message.reply("Lỗi khi reply.");
+
+      }
+
+    }
+
   });
 
-  client.login(config.token).catch(err => console.error(`❌ Lỗi Login!`));
+
+
+  client.login(config.token);
+
 });
