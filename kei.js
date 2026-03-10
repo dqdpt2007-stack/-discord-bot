@@ -179,20 +179,25 @@ async function getEquipBuffs(userid) {
 // Hàm lấy & cập nhật nhiệm vụ (Reset sau 24h)
 async function getQuest(id) {
   const now = Date.now();
-  let res = await pool.query("SELECT * FROM quests WHERE userid=$1", [id]);
-  
-  if (res.rows.length === 0) {
-    await pool.query("INSERT INTO quests (userid, last_reset) VALUES ($1, $2)", [id, now]);
+  try {
+    let res = await pool.query("SELECT * FROM quests WHERE userid=$1", [id]);
+    
+    if (res.rows.length === 0) {
+      const newQuest = { chat_count: 0, voice_mins: 0, chat_claimed: false, voice_claimed: false, last_reset: now };
+      await pool.query("INSERT INTO quests (userid, chat_count, voice_mins, chat_claimed, voice_claimed, last_reset) VALUES ($1, 0, 0, false, false, $2)", [id, now]);
+      return newQuest;
+    }
+
+    let questData = res.rows[0];
+    if (now - parseInt(questData.last_reset) > 86400000) {
+      questData = { chat_count: 0, voice_mins: 0, chat_claimed: false, voice_claimed: false, last_reset: now };
+      await saveQuest(id, questData);
+    }
+    return questData;
+  } catch (err) {
+    console.error("Lỗi getQuest:", err);
     return { chat_count: 0, voice_mins: 0, chat_claimed: false, voice_claimed: false, last_reset: now };
   }
-
-  let questData = res.rows[0];
-  // Reset nhiệm vụ nếu đã qua 24h (86400000 ms)
-  if (now - questData.last_reset > 86400000) {
-    questData = { chat_count: 0, voice_mins: 0, chat_claimed: false, voice_claimed: false, last_reset: now };
-    await saveQuest(id, questData);
-  }
-  return questData;
 }
 
 async function saveQuest(id, data) {
@@ -257,8 +262,7 @@ async function startLevelBot() {
         return message.reply({ embeds: [helpEmbed] });
       }
 // --- LỆNH CÂU CÁ (k!fish) ---
-      if (cmd === "fish") {
-        // Kiểm tra fishCooldown (Map này phải khai báo ở ĐẦU FILE - ngoài messageCreate)
+     if (cmd === "fish") {
         if (typeof fishCooldown === 'undefined') {
            return message.reply("⚠️ Lỗi: Chưa khai báo `fishCooldown` ở đầu file!");
         }
@@ -270,44 +274,58 @@ async function startLevelBot() {
             return message.reply(`🎣 Cá chưa cắn mồi đâu! Thử lại sau **${timeLeft}s** nhé.`);
           }
         }
+
+        // --- 1. KIỂM TRA MỒI CÂU TRONG TÚI ĐỒ ---
+        const baitCheck = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name='Mồi Câu'", [id]);
+        if (baitCheck.rows.length === 0 || baitCheck.rows[0].quantity < 1) {
+            return message.reply("❌ Bạn không có **Mồi Câu**! Hãy ra chợ mua bằng lệnh `buy mồi câu` (Giá 10 KCoin/cái) nhé.");
+        }
+
+        // Trừ 1 Mồi Câu từ database
+        await pool.query("UPDATE inventory SET quantity = quantity - 1 WHERE userid=$1 AND item_name='Mồi Câu'", [id]);
+
+        // Đặt Cooldown sau khi đã chắc chắn có mồi và bắt đầu câu
         fishCooldown.set(id, now);
 
+        // --- 2. ROLL TỈ LỆ (ĐÃ NERF ĐỒ NGON) ---
         const roll = Math.random() * 100;
         let rewardText = "";
         let kcoinReward = 0;
         let isBoost = false;
 
-        if (roll < 60) {
+        // Tỉ lệ mới: 70% Rác | 24% Cá Thường | 4.5% Cá Hiếm | 1% Rương | 0.5% Boost
+        if (roll < 70) { 
           const trashes = ["🥾 Chiếc giày rách", "🌿 Cụm rong biển", "🦴 Bộ xương cá", "🧴 Chai nhựa rỗng"];
           const item = trashes[Math.floor(Math.random() * trashes.length)];
-          kcoinReward = Math.floor(Math.random() * 10) + 1;
+          kcoinReward = Math.floor(Math.random() * 10) + 1; // 1-10 Kcoin (Lỗ vốn mua mồi)
           rewardText = `**${item}** và bán ve chai được **${kcoinReward} Kcoin** 🗑️`;
-        } else if (roll < 85) {
+        } else if (roll < 94) { 
           const commons = ["🐟 Cá Rô Đồng", "🐠 Cá Chép", "🐡 Cá Nóc"];
           const item = commons[Math.floor(Math.random() * commons.length)];
-          kcoinReward = Math.floor(Math.random() * 100) + 30;
+          kcoinReward = Math.floor(Math.random() * 80) + 20; // 20-100 Kcoin (Có lời)
           rewardText = `**${item}** và bán được **${kcoinReward} Kcoin**! 💵`;
-        } else if (roll < 90) {
-          const rares = ["🦈 Cá Mập Con", "🐬 Cá Heo Xanh"];
+        } else if (roll < 98.5) { 
+          const rares = ["🦈 Cá Mập Con", "🐬 Cá Heo Xanh", "🐢 Rùa Biển Trôi Dạt"];
           const item = rares[Math.floor(Math.random() * rares.length)];
-          kcoinReward = Math.floor(Math.random() * 500) + 300;
+          kcoinReward = Math.floor(Math.random() * 300) + 200; // 200-500 Kcoin
           rewardText = `**${item}** (Hiếm) và bán được tận **${kcoinReward} Kcoin**! ✨`;
-        } else if (roll < 95) {
-          kcoinReward = Math.floor(Math.random() * 1000) + 1000;
-          rewardText = `**📦 Rương Cũ Kỹ**! Mở ra nhận được **${kcoinReward.toLocaleString()} Kcoin**! 🎉`;
-        } else {
+        } else if (roll < 99.5) { 
+          kcoinReward = Math.floor(Math.random() * 800) + 500; // 500-1300 Kcoin
+          rewardText = `**📦 Rương Cũ Kỹ** dưới đáy biển! Mở ra nhận được **${kcoinReward.toLocaleString()} Kcoin**! 🎉`;
+        } else { 
           isBoost = true;
-          rewardText = `**🧪 Nước Tăng Lực Bò Húc**! Bạn được **Boost x2 XP** trong 10 phút! ⚡`;
+          rewardText = `**🧪 Nước Tăng Lực** nổi trên mặt nước! Bạn được **Boost x2 XP** trong 10 phút! ⚡`;
         }
 
         const data = await getLevel(id);
         if (isBoost) {
-          data.boost_until = Math.max(Date.now(), data.boost_until || 0) + 600000;
+          data.boost_until = Math.max(Date.now(), data.boost_until || 0) + 600000; // Cộng dồn 10 phút
         } else {
           data.kcoin += kcoinReward;
         }
         await saveLevel(id, data);
-        return message.reply(`🎣 Bạn quăng cần xuống nước...\n💦 Kéo lên! Bạn đã câu được ${rewardText}`);
+        
+        return message.reply(`🎣 Bạn móc 1 con mồi vào cần và quăng xuống nước...\n💦 Kéo lên! Bạn đã câu được ${rewardText}`);
       }
 
       // --- Lệnh Đổi Prefix ---
@@ -338,49 +356,77 @@ async function startLevelBot() {
 // ==========================================
    
       // --- Lệnh Xem Shop ---
+      // --- Lệnh Xem Shop ---
       if (cmd === "shop") {
         const shopEmbed = new EmbedBuilder()
           .setTitle("🛒 Cửa Hàng Kcoin & Gacha")
           .setColor("#ff9900")
-          .setDescription(`Dùng lệnh \`${prefix}buy <mã>\` để mua vật phẩm.`)
+          .setDescription(`Dùng lệnh \`${prefix}buy <mã> [số_lượng]\` để mua vật phẩm.\n*Ví dụ: \`${prefix}buy r1 5\` (Mua 5 Rương I cùng lúc)*`)
           .addFields(
+            { name: "🪱 Mồi Câu (Mã: `moi`) - 10 KC", value: "Bắt buộc phải có để dùng lệnh câu cá (`fish`)." },
             { name: "🔥 Thuốc Boost (Mã: `boost`) - 10,000 KC", value: "Nhân đôi X2 XP & Kcoin trong 1 giờ." },
             { name: "📦 Rương I (Mã: `r1`) - 1,000 KC", value: "Tỷ lệ: Bã mía 40%, Đồng 30%, Sắt 25%, Vàng 5%" },
             { name: "🧰 Rương II (Mã: `r2`) - 5,000 KC", value: "Tỷ lệ: Bã mía 20%, Đồng 35%, Sắt 30%, Vàng 10%, Kim Cương 5%" },
             { name: "💎 Rương III (Mã: `r3`) - 20,000 KC", value: "Tỷ lệ: Đồng 40%, Sắt 30%, Vàng 20%, Kim Cương 9.9%, Phượng Hoàng 0.1%" }
-          );
+          )
+          .setFooter({ text: "Mua càng nhiều càng ngonnn" });
         return message.reply({ embeds: [shopEmbed] });
       }
 
       // --- Lệnh Mua (Buy) ---
+      // --- Lệnh Mua (Buy) ---
       if (cmd === "buy") {
-        const data = await getLevel(id);
         const itemCode = args[0]?.toLowerCase();
-        let cost = 0, itemName = "";
+        
+        // Lấy số lượng từ chữ thứ 2. Nếu người dùng không nhập số, mặc định là 1
+        let amount = parseInt(args[1]);
+        if (isNaN(amount)) amount = 1;
+        
+        // Chặn nhập số âm hoặc số 0, và giới hạn tối đa để tránh lỗi lag game
+        if (amount <= 0) return message.reply("❌ Số lượng mua phải lớn hơn 0.");
+        if (amount > 10000) return message.reply("❌ Đại gia từ từ thôi! Mỗi lần chỉ được mua tối đa 10,000 vật phẩm.");
 
-        if (itemCode === "boost") { cost = 10000; itemName = "Thuốc Boost"; }
-        else if (itemCode === "r1") { cost = 1000; itemName = "Rương I"; }
-        else if (itemCode === "r2") { cost = 5000; itemName = "Rương II"; }
-        else if (itemCode === "r3") { cost = 20000; itemName = "Rương III"; }
+        let unitCost = 0, itemName = "", itemType = "chest";
+
+        // Phân loại vật phẩm dựa trên mã
+        if (itemCode === "boost") { unitCost = 10000; itemName = "Thuốc Boost"; itemType = "boost"; }
+        else if (itemCode === "r1") { unitCost = 1000; itemName = "Rương I"; }
+        else if (itemCode === "r2") { unitCost = 5000; itemName = "Rương II"; }
+        else if (itemCode === "r3") { unitCost = 20000; itemName = "Rương III"; }
+        else if (itemCode === "moi" || itemCode === "mồi") { unitCost = 10; itemName = "Mồi Câu"; itemType = "consumable"; }
         else return message.reply(`❌ Mã vật phẩm sai. Gõ \`${prefix}shop\` để xem.`);
 
-        if (data.kcoin < cost) return message.reply(`❌ Bạn không đủ tiền! Cần **${cost.toLocaleString()} Kcoin**.`);
-        
-        data.kcoin -= cost;
-        await saveLevel(id, data);
+        const totalCost = unitCost * amount;
+        const data = await getLevel(id);
 
-        if (itemCode === "boost") {
-          data.boost_until = Math.max(data.boost_until, now) + 3600000; // Cộng 1 giờ
+        if (data.kcoin < totalCost) {
+            return message.reply(`❌ Bạn không đủ tiền! Cần **${totalCost.toLocaleString()} Kcoin** để mua **${amount}x ${itemName}**. (Bạn đang có: ${data.kcoin.toLocaleString()})`);
+        }
+        
+        // Trừ tiền
+        data.kcoin -= totalCost;
+
+        // Xử lý riêng nếu mua Thuốc Boost (Cộng dồn thời gian)
+        if (itemType === "boost") {
+          const boostDuration = 3600000 * amount; // 1 giờ (3,600,000 ms) x số lượng mua
+          data.boost_until = Math.max(data.boost_until, now) + boostDuration;
           await saveLevel(id, data);
-          return message.reply("✅ Đã kích hoạt Boost x2 trong 1 giờ!");
-        } else {
-          const invCheck = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name=$2", [id, itemName]);
+          return message.reply(`✅ Đại gia đã vung **${totalCost.toLocaleString()} Kcoin** mua **${amount} Thuốc Boost**! X2 XP & Kcoin kéo dài thêm **${amount} giờ**.`);
+        } 
+        
+        // Xử lý cho Rương và Mồi Câu (Cộng dồn vào Inventory)
+        else {
+          await saveLevel(id, data);
+          
+          const invCheck = await pool.query("SELECT id FROM inventory WHERE userid=$1 AND item_name=$2", [id, itemName]);
           if (invCheck.rows.length > 0) {
-            await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [invCheck.rows[0].id]);
+            // Đã có vật phẩm này -> Cập nhật cộng thêm số lượng
+            await pool.query("UPDATE inventory SET quantity = quantity + $1 WHERE id=$2", [amount, invCheck.rows[0].id]);
           } else {
-            await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, 'chest', $2, 1)", [id, itemName]);
+            // Chưa có vật phẩm -> Tạo mới
+            await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, $2, $3, $4)", [id, itemType, itemName, amount]);
           }
-          return message.reply(`📦 Bạn đã mua thành công **${itemName}**. Dùng \`${prefix}inv\` để kiểm tra!`);
+          return message.reply(`🛍️ Mua thành công **${amount}x ${itemName}** với tổng giá **${totalCost.toLocaleString()} Kcoin**. Dùng \`${prefix}inv\` để kiểm tra đồ nhé!`);
         }
       }
 
@@ -614,53 +660,51 @@ if (cmd === "addreward") {
         return message.reply(`🗑️ Đã thu hồi toàn bộ danh hiệu của <@${targetUser.id}>.`);
       }
 
-      // --- Lệnh Nhiệm Vụ (Quest) ---
-      if (cmd === "quest" ) {
-        const qData = await getQuest(id);
-        const uData = await getLevel(id);
-        let replyMsg = "";
+// --- SỬA ĐOẠN NÀY ---
+if (cmd === "quest") {
+    const qData = await getQuest(id);
+    const uData = await getLevel(id);
+    let replyMsg = "";
 
-        // Kiểm tra và nhận thưởng Chat
-        if (qData.chat_count >= 50 && !qData.chat_claimed) {
-            uData.kcoin += 1000;
-            qData.chat_claimed = true;
-            replyMsg += "✅ Bạn đã hoàn thành **Chat 50 tin nhắn** và nhận được **1,000 Kcoin**!\n";
+    // Check Chat 50
+    if (qData.chat_count >= 50 && !qData.chat_claimed) {
+        uData.kcoin += 1000;
+        qData.chat_claimed = true;
+        replyMsg += "✅ Bạn đã hoàn thành **Chat 50 tin nhắn** và nhận được **1,000 Kcoin**!\n";
+    }
+    
+    // Check Voice 30
+    if (qData.voice_mins >= 30 && !qData.voice_claimed) {
+        const invCheck = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name='Rương I'", [id]);
+        if (invCheck.rows.length > 0) {
+            await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [invCheck.rows[0].id]);
+        } else {
+            await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, 'chest', 'Rương I', 1)", [id]);
         }
-        
-        // Kiểm tra và nhận thưởng Voice
-        if (qData.voice_mins >= 30 && !qData.voice_claimed) {
-            const invCheck = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name='Rương I'", [id]);
-            if (invCheck.rows.length > 0) {
-              await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [invCheck.rows[0].id]);
-            } else {
-              await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, 'chest', 'Rương I', 1)");
-            }
-            qData.voice_claimed = true;
-            replyMsg += "✅ Bạn đã hoàn thành **Treo Voice 30 phút** và nhận được **1x 📦 Rương I**!\n";
-        }
+        qData.voice_claimed = true;
+        replyMsg += "✅ Bạn đã hoàn thành **Treo Voice 30 phút** và nhận được **1x 📦 Rương I**!\n";
+    }
 
-        if (replyMsg !== "") {
-            await saveLevel(id, uData);
-            await saveQuest(id, qData);
-            return message.reply(`🎉 **CHÚC MỪNG!**\n${replyMsg}`);
-        }
+    // Nếu có quà thì lưu và thông báo trước
+    if (replyMsg !== "") {
+        await saveLevel(id, uData);
+        await saveQuest(id, qData);
+        await message.reply(`🎉 **CHÚC MỪNG!**\n${replyMsg}`);
+        // Không dùng return ở đây để code chạy tiếp xuống dưới hiện Embed
+    }
 
-        // Hiển thị tiến độ nếu chưa nhận thưởng
-        const chatProg = Math.min(qData.chat_count, 50);
-        const voiceProg = Math.min(qData.voice_mins, 30);
-        
-        const qEmbed = new EmbedBuilder()
-          .setTitle("📜 Bảng Nhiệm Vụ Hằng Ngày")
-          .setColor("#3498DB")
-          .setDescription("Hoàn thành nhiệm vụ để nhận phần thưởng hấp dẫn! (Reset sau 24h)")
-          .addFields(
-            { name: "💬 Chat 50 lần", value: `Tiến độ: **${chatProg}/50** ${qData.chat_claimed ? "✅ (Đã nhận)" : "🎁 *Thưởng: 1,000 Kcoin*"}` },
-            { name: "🎙️ Voice 30 phút", value: `Tiến độ: **${voiceProg}/30** ${qData.voice_claimed ? "✅ (Đã nhận)" : "🎁 *Thưởng: 1x Rương I*"}` }
-          )
-          .setFooter({ text: `Gõ ${prefix}quest để nhận thưởng khi đầy thanh tiến độ!` });
+    // Hiển thị tiến độ (Đoạn này giữ nguyên Embed như cũ của bạn)
+    const chatProg = Math.min(qData.chat_count, 50);
+    const voiceProg = Math.min(qData.voice_mins, 30);
+    const qEmbed = new EmbedBuilder()
+        .setTitle("📜 Bảng Nhiệm Vụ Hằng Ngày")
+        .addFields(
+            { name: "💬 Chat 50 lần", value: `Tiến độ: **${chatProg}/50** ${qData.chat_claimed ? "✅" : "🎁"}` },
+            { name: "🎙️ Voice 30 phút", value: `Tiến độ: **${voiceProg}/30** ${qData.voice_claimed ? "✅" : "🎁"}` }
+        );
 
-        return message.reply({ embeds: [qEmbed] });
-      }
+    return message.channel.send({ embeds: [qEmbed] }); // Dùng channel.send để không bị lặp mention
+}
 
       // --- Lệnh Nhận Thưởng Ngày (Daily) ---
       if (cmd === "daily") {
@@ -693,7 +737,7 @@ if (cmd === "addreward") {
         return message.reply(replyMsg);
       }
 
-      // --- Lệnh Chơi Cờ Bạc (Coinflip) ---
+    // --- Lệnh Chơi Cờ Bạc (Coinflip) ---
       if (cmd === "cf" || cmd === "coinflip") {
         const bet = parseInt(args[0]);
         if (!bet || bet <= 0 || bet > 5000) return message.reply(`❌ Cược không hợp lệ. Chỉ nhận từ 1 - 5000 Kcoin. Dùng: \`${prefix}cf <tiền>\``);
@@ -701,19 +745,27 @@ if (cmd === "addreward") {
         const data = await getLevel(id);
         if (data.kcoin < bet) return message.reply(`❌ Ví bạn không đủ tiền. Bạn chỉ có **${data.kcoin.toLocaleString()} Kcoin**.`);
 
+        // 1. TRỪ TIỀN NGAY LẬP TỨC để chống bug spam
+        data.kcoin -= bet;
+
         const buffs = await getEquipBuffs(id);
         const winMultiplier = 1 + (buffs.gamble / 100); 
 
         const isWin = Math.random() < 0.5;
+        
         if (isWin) {
-          const winAmount = Math.floor(bet * winMultiplier);
-          data.kcoin += winAmount;
+          // 2. Thắng: Trả lại tiền gốc (bet) + Tiền lời (profit)
+          const profit = Math.floor(bet * winMultiplier);
+          const totalReturn = bet + profit; 
+          
+          data.kcoin += totalReturn; 
           await saveLevel(id, data);
-          return message.reply(`🪙 Ngửa! Bạn thắng **${(winAmount + bet).toLocaleString()} Kcoin** (Tiền lời: ${winAmount} - Tính cả buff ${buffs.gamble}%).`);
+          
+          return message.reply(`🪙 **NGỬA!** Bạn thắng **${totalReturn.toLocaleString()} Kcoin**\n*(Gồm ${bet.toLocaleString()} gốc + ${profit.toLocaleString()} lời nhờ buff +${buffs.gamble}% cờ bạc)*`);
         } else {
-          data.kcoin -= bet;
+          // 3. Thua: Đã trừ tiền ở bước 1 rồi, chỉ cần lưu vào Database
           await saveLevel(id, data);
-          return message.reply(`🪙 Sấp! Bạn đã thua mất **${bet.toLocaleString()} Kcoin**.`);
+          return message.reply(`🪙 **SẤP!** Bạn đã thua mất **${bet.toLocaleString()} Kcoin**. Đừng nản chí, ngã ở đâu gấp đôi ở đó!`);
         }
       }
 
