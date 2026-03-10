@@ -431,6 +431,7 @@ async function startLevelBot() {
       }
 
       // --- Lệnh Túi đồ (Inventory) ---
+      // --- Lệnh Túi đồ (Inventory) ---
       if (cmd === "inv" || cmd === "inventory") {
         const invData = await pool.query("SELECT * FROM inventory WHERE userid=$1 ORDER BY item_type ASC, id ASC", [id]);
         if (invData.rows.length === 0) return message.reply("🎒 Túi đồ của bạn trống rỗng.");
@@ -450,9 +451,17 @@ async function startLevelBot() {
         let desc = "";
         items.forEach((item, index) => {
           const globalIndex = start + index + 1; 
+          
+          // 1. Nếu là RƯƠNG
           if (item.item_type === 'chest') {
             desc += `**[${globalIndex}]** 📦 ${item.item_name} (x${item.quantity})\n`;
-          } else {
+          } 
+          // 2. Nếu là ĐỒ TIÊU HAO (Mồi câu) -> Thêm hiển thị số lượng
+          else if (item.item_type === 'consumable') {
+            desc += `**[${globalIndex}]** 🪱 ${item.item_name} (x${item.quantity})\n`;
+          } 
+          // 3. Nếu là TRANG BỊ
+          else {
             const equipIcon = item.is_equipped ? "✅ " : "";
             desc += `**[${globalIndex}]** ${equipIcon}**${item.item_name}** [${item.set_name} - ${item.part}]\n`;
             desc += `└ *Buff: +${item.stat_xp}% XP, +${item.stat_jp_chance}% Tỉ lệ JP, +${item.stat_jp_money} Tiền JP, +${item.stat_gamble}% Cờ bạc*\n`;
