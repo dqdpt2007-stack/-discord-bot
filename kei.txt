@@ -643,6 +643,7 @@ async function startLevelBot() {
   // 1. TỰ ĐỘNG KHÔI PHỤC KHI RESTART BOT
   levelBot.on("ready", async () => {
     console.log(`📈 Bot Level Online: ${levelBot.user.tag}`);
+console.log(`Bot đã sẵn sàng! Prefix hiện tại là: ${DEFAULT_LEVEL_PREFIX}`);5:03 PM 3/13/2026
     let restoredCount = 0;
     levelBot.guilds.cache.forEach(guild => {
       guild.voiceStates.cache.forEach(vs => {
