@@ -155,7 +155,7 @@ async function initDB() {
       last_reset BIGINT DEFAULT 0
     )
   `);
-
+}
     // Load prefix vào cache
     const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
     prefixes.rows.forEach(r => guildPrefixCache.set(r.guildid, r.prefix));
