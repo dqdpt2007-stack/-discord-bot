@@ -492,28 +492,33 @@ async function startLevelBot() {
         
         // Xử lý cho Rương và Mồi Câu (Cộng dồn vào Inventory)
 // Xử lý cho Rương và Mồi Câu (Cộng dồn vào Inventory)
-        else {
-          await saveLevel(id, data);
-          
-          const invCheck = await pool.query("SELECT id FROM inventory WHERE userid=$1 AND item_name=$2", [id, itemName]);
-          if (invCheck.rows.length > 0) {
-            // Đã có vật phẩm này -> Cập nhật cộng thêm số lượng
-            await pool.query("UPDATE inventory SET quantity = quantity + $1 WHERE id=$2", [amount, invCheck.rows[0].id]);
-          } else {
-            // Chưa có vật phẩm -> Dùng lệnh INSERT để tạo mới
-            await pool.query(
-              "INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, $2, $3, $4)", 
-              [id, itemType, itemName, amount]
-            );
-          }
+       else {
+    await saveLevel(id, data);
+    
+    // Kiểm tra xem trong túi đã có món này chưa
+    const invCheck = await pool.query(
+        "SELECT id, quantity FROM inventory WHERE userid=$1 AND item_name=$2", 
+        [id, itemName]
+    );
 
-          // Cập nhật nhiệm vụ hàng ngày cho việc mua đồ (Nhớ thêm dòng này nè)
-          await updateQuestProgress(id, 'buy_shop');
+    if (invCheck.rows.length > 0) {
+        // Nếu ĐÃ CÓ: Cộng dồn số lượng
+        await pool.query(
+            "UPDATE inventory SET quantity = quantity + $1 WHERE id=$2", 
+            [amount, invCheck.rows[0].id]
+        );
+    } else {
+        // Nếu CHƯA CÓ: Thêm dòng mới hoàn toàn
+        // Đảm bảo item_type được truyền đúng (chest, consumable, hoặc equip)
+        await pool.query(
+            "INSERT INTO inventory (userid, item_type, item_name, quantity, is_equipped) VALUES ($1, $2, $3, $4, false)", 
+            [id, itemType, itemName, amount]
+        );
+    }
 
-          // Thông báo cho người dùng biết mua thành công
-          return message.reply(`🛍️ Chúc mừng! Bạn đã mua thành công **${amount}x ${itemName}** với giá **${totalCost.toLocaleString()} Kcoin**.`);
-        }
-      } // <--- Kết thúc lệnh buy
+    await updateQuestProgress(id, 'buy_shop');
+    return message.reply(`🛍️ Chúc mừng! Bạn đã mua thành công **${amount}x ${itemName}**.`);
+}
 
       // --- Lệnh Túi đồ (Inventory) ---
       // --- Lệnh Túi đồ (Inventory) ---
@@ -1188,7 +1193,7 @@ updateQuestProgress(userId, 'chat');
 
   // 3. XỬ LÝ KHI CÓ NGƯỜI VÀO/RA/TẮT MIC (HOẠT ĐỘNG BÌNH THƯỜNG)
   levelBot.on("voiceStateUpdate", (oldState, newState) => {
-    const userId = newState.id;
+    const userId = newState.member.id;
     if (newState.member?.user?.bot) return;
 
     const isValidNow = newState.channelId 
