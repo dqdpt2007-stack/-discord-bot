@@ -1019,6 +1019,7 @@ if (cmd === "quest") {
     }
 
     // --- Quest: Tích luỹ số lần chat ---
+const userId = newState.member.id;
 updateQuestProgress(userId, 'chat');
     
     // --- Tiền Kcoin rớt ra & Logic Jackpot ---
