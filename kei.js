@@ -435,7 +435,7 @@ async function startLevelBot() {
             { name: "🔥 Thuốc Boost (Mã: `boost`) - 10,000 KC", value: "Nhân đôi X2 XP & Kcoin trong 1 giờ." },
             { name: "📦 Rương I (Mã: `r1`) - 1,000 KC", value: "Tỷ lệ: Bã mía 40%, Đồng 30%, Sắt 25%, Vàng 5%" },
             { name: "🧰 Rương II (Mã: `r2`) - 5,000 KC", value: "Tỷ lệ: Bã mía 20%, Đồng 35%, Sắt 30%, Vàng 10%, Kim Cương 5%" },
-            { name: "💎 Rương III (Mã: `r3`) - 20,000 KC", value: "Tỷ lệ: Đồng 40%, Sắt 30%, Vàng 20%, Kim Cương 9.9%, Phượng Hoàng 0.1%" }
+            { name: "💎 Rương III (Mã: `r3`) - 30,000 KC", value: "Tỷ lệ: Đồng 34,91%, Sắt 30%, Vàng 20%, Kim Cương 14.99%, Phượng Hoàng 0.1%" }
           )
           .setFooter({ text: "Mua càng nhiều càng ngonnn" });
         return message.reply({ embeds: [shopEmbed] });
@@ -570,9 +570,10 @@ async function startLevelBot() {
             else if (rand <= 95) setName = 'Vàng';
             else setName = 'Kim Cương';
           } else { 
-            if (rand <= 40) setName = 'Đồng';
-            else if (rand <= 70) setName = 'Sắt';
-            else if (rand <= 90) setName = 'Vàng';
+            // Rương III
+            if (rand <= 34.91) setName = 'Đồng';
+            else if (rand <= 64.91) setName = 'Sắt';
+            else if (rand <= 84.91) setName = 'Vàng';
             else if (rand <= 99.9) setName = 'Kim Cương';
             else setName = 'Phượng Hoàng';
           }
@@ -849,7 +850,7 @@ async function startLevelBot() {
         const buffs = await getEquipBuffs(id);
         const winMultiplier = 1 + (buffs.gamble / 100); 
 
-        const isWin = Math.random() < 0.5;
+        const isWin = Math.random() < 0.3;
         
         if (isWin) {
           const profit = Math.floor(bet * winMultiplier);
