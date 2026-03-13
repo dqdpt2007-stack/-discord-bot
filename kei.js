@@ -1192,34 +1192,38 @@ updateQuestProgress(userId, 'chat');
   });
 
   // 3. XỬ LÝ KHI CÓ NGƯỜI VÀO/RA/TẮT MIC (HOẠT ĐỘNG BÌNH THƯỜNG)
-  levelBot.on("voiceStateUpdate", (oldState, newState) => {
-    const userId = newState.member.id;
-    if (newState.member?.user?.bot) return;
+// --- ĐOẠN XỬ LÝ VOICE ---
+  levelBot.on("voiceStateUpdate", async (oldState, newState) => {
+    try {
+      if (!newState.member || newState.member.user.bot) return;
+      const userId = newState.member.id;
 
-    const isValidNow = newState.channelId 
-      && !newState.selfDeaf && !newState.serverDeaf 
-      && !newState.selfMute && !newState.serverMute;
+      const isValidNow = newState.channelId 
+        && !newState.selfDeaf && !newState.serverDeaf 
+        && !newState.selfMute && !newState.serverMute;
 
-    const wasValidBefore = oldState.channelId 
-      && !oldState.selfDeaf && !oldState.serverDeaf 
-      && !oldState.selfMute && !oldState.serverMute;
+      const wasValidBefore = oldState.channelId 
+        && !oldState.selfDeaf && !oldState.serverDeaf 
+        && !oldState.selfMute && !oldState.serverMute;
 
-    // KỊCH BẢN 1: Bắt đầu tính giờ (nhảy vào kênh hoặc vừa bật lại mic)
-    if (isValidNow && !wasValidBefore) {
-      startVoiceTimer(userId, newState.guild);
-    } 
-    // KỊCH BẢN 2: Dừng tính giờ (out kênh, tắt mic, hoặc điếc)
-    else if (!isValidNow && wasValidBefore) {
-      if (voiceTimers.has(userId)) {
-        clearInterval(voiceTimers.get(userId));
-        voiceTimers.delete(userId);
+      if (isValidNow && !wasValidBefore) {
+        await startVoiceTimer(userId, newState.guild);
+      } 
+      else if (!isValidNow && wasValidBefore) {
+        if (typeof voiceTimers !== 'undefined' && voiceTimers.has(userId)) {
+          clearInterval(voiceTimers.get(userId));
+          voiceTimers.delete(userId);
+        }
       }
+    } catch (error) {
+      console.error("❌ Lỗi Voice:", error);
     }
-  });
+  }); // Đóng sự kiện voiceStateUpdate
 
-  // Khởi động bot
+  // --- LOGIN BOT ---
   levelBot.login(LEVEL_TOKEN);
-} // <--- Ngoặc đóng siêu quan trọng của hàm startLevelBot
 
-// Bắt đầu chạy hệ thống
+} // Đóng ngoặc của hàm async function startLevelBot() {
+
+// --- CHẠY HÀM KHỞI ĐỘNG ---
 startLevelBot();
