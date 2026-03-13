@@ -4,7 +4,22 @@ const { Pool } = require("pg");
 const fishCooldown = new Map();
 const cooldown = new Map();
 const guildPrefixCache = new Map();
-
+// ==========================================
+// ===== DANH SÁCH 10 NHIỆM VỤ GỐC ==========
+// ==========================================
+const BASE_QUESTS = {
+  "chat": { desc: "💬 Chat 50 tin nhắn", max: 50, rewardKC: 500 },
+  "voice": { desc: "🎙️ Treo Voice 30 phút", max: 30, rewardKC: 500 },
+  "fish": { desc: "🎣 Câu cá 5 lần", max: 5, rewardKC: 300 },
+  "cf": { desc: "🪙 Chơi tung đồng xu 3 lần", max: 3, rewardKC: 200 },
+  "cf_win": { desc: "🏆 Thắng tung đồng xu 2 lần", max: 2, rewardKC: 400 },
+  "open_chest": { desc: "📦 Mở rương 3 lần", max: 3, rewardKC: 300 },
+  "buy_shop": { desc: "🛒 Mua đồ trong Shop 2 lần", max: 2, rewardKC: 200 },
+  "give": { desc: "🎁 Chuyển tiền hoặc đồ 1 lần", max: 1, rewardKC: 100 },
+  "daily": { desc: "📅 Nhận thưởng Daily 1 lần", max: 1, rewardKC: 100 },
+  "equip": { desc: "⚔️ Mặc/Tháo trang bị 1 lần", max: 1, rewardKC: 100 }
+};
+const QUEST_KEYS = Object.keys(BASE_QUESTS);
 // ==========================================
 // ===== 1. KIỂM TRA MÔI TRƯỜNG (ENV) =======
 // ==========================================
@@ -127,16 +142,19 @@ async function initDB() {
     `);
     
     // Bảng Nhiệm vụ (Quests)
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS quests (
-        userid TEXT PRIMARY KEY,
-        chat_count INT DEFAULT 0,
-        voice_mins INT DEFAULT 0,
-        chat_claimed BOOLEAN DEFAULT false,
-        voice_claimed BOOLEAN DEFAULT false,
-        last_reset BIGINT DEFAULT 0
-      )
-    `);
+    await pool.query("SELECT active_quests FROM quests LIMIT 1");
+} catch (e) {
+  await pool.query("DROP TABLE IF EXISTS quests");
+  await pool.query(`
+    CREATE TABLE quests (
+      userid TEXT PRIMARY KEY,
+      active_quests TEXT,
+      progress TEXT,
+      claimed TEXT,
+      all_claimed BOOLEAN DEFAULT false,
+      last_reset BIGINT DEFAULT 0
+    )
+  `);
 
     // Load prefix vào cache
     const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
@@ -181,32 +199,84 @@ async function getQuest(id) {
   const now = Date.now();
   try {
     let res = await pool.query("SELECT * FROM quests WHERE userid=$1", [id]);
-    
+    let needReset = false;
+    let questData;
+
     if (res.rows.length === 0) {
-      const newQuest = { chat_count: 0, voice_mins: 0, chat_claimed: false, voice_claimed: false, last_reset: now };
-      await pool.query("INSERT INTO quests (userid, chat_count, voice_mins, chat_claimed, voice_claimed, last_reset) VALUES ($1, 0, 0, false, false, $2)", [id, now]);
-      return newQuest;
+      needReset = true;
+    } else {
+      questData = res.rows[0];
+      if (now - parseInt(questData.last_reset) > 86400000) needReset = true;
     }
 
-    let questData = res.rows[0];
-    if (now - parseInt(questData.last_reset) > 86400000) {
-      questData = { chat_count: 0, voice_mins: 0, chat_claimed: false, voice_claimed: false, last_reset: now };
-      await saveQuest(id, questData);
+    // Nếu qua ngày mới hoặc user mới -> Random 3 nhiệm vụ
+    if (needReset) {
+      let shuffled = QUEST_KEYS.sort(() => 0.5 - Math.random());
+      let active = shuffled.slice(0, 3);
+      let progress = { [active[0]]: 0, [active[1]]: 0, [active[2]]: 0 };
+      let claimed = { [active[0]]: false, [active[1]]: false, [active[2]]: false };
+      
+      questData = {
+        userid: id,
+        active_quests: JSON.stringify(active),
+        progress: JSON.stringify(progress),
+        claimed: JSON.stringify(claimed),
+        all_claimed: false,
+        last_reset: now
+      };
+
+      if (res.rows.length === 0) {
+        await pool.query(
+          "INSERT INTO quests (userid, active_quests, progress, claimed, all_claimed, last_reset) VALUES ($1, $2, $3, $4, $5, $6)",
+          [id, questData.active_quests, questData.progress, questData.claimed, false, now]
+        );
+      } else {
+        await saveQuest(id, questData);
+      }
     }
-    return questData;
+    
+    // Parse chuỗi JSON thành Object để dễ dùng
+    return {
+      ...questData,
+      active_quests: typeof questData.active_quests === 'string' ? JSON.parse(questData.active_quests) : questData.active_quests,
+      progress: typeof questData.progress === 'string' ? JSON.parse(questData.progress) : questData.progress,
+      claimed: typeof questData.claimed === 'string' ? JSON.parse(questData.claimed) : questData.claimed
+    };
   } catch (err) {
     console.error("Lỗi getQuest:", err);
-    return { chat_count: 0, voice_mins: 0, chat_claimed: false, voice_claimed: false, last_reset: now };
+    return null;
   }
 }
-
 async function saveQuest(id, data) {
   await pool.query(
-    `UPDATE quests SET chat_count=$1, voice_mins=$2, chat_claimed=$3, voice_claimed=$4, last_reset=$5 WHERE userid=$6`,
-    [data.chat_count, data.voice_mins, data.chat_claimed, data.voice_claimed, data.last_reset, id]
+    `UPDATE quests SET active_quests=$1, progress=$2, claimed=$3, all_claimed=$4, last_reset=$5 WHERE userid=$6`,
+    [
+      JSON.stringify(data.active_quests),
+      JSON.stringify(data.progress),
+      JSON.stringify(data.claimed),
+      data.all_claimed,
+      data.last_reset,
+      id
+    ]
   );
 }
 
+// Hàm mới: Dùng để cộng tiến độ nhiệm vụ ở bất kỳ đâu
+async function updateQuestProgress(id, questKey, amount = 1) {
+  const qData = await getQuest(id);
+  if (!qData || qData.all_claimed) return; // Nếu lỗi hoặc đã xong hết thì bỏ qua
+  
+  if (qData.active_quests.includes(questKey)) {
+    if (qData.progress[questKey] < BASE_QUESTS[questKey].max) {
+      qData.progress[questKey] += amount;
+      // Chốt chặn không cho vượt quá max
+      if (qData.progress[questKey] > BASE_QUESTS[questKey].max) {
+        qData.progress[questKey] = BASE_QUESTS[questKey].max;
+      }
+      await saveQuest(id, qData);
+    }
+  }
+}
 // ==========================================
 // ===== 5. BẮT ĐẦU BOT LEVEL ===============
 // ==========================================
@@ -323,6 +393,7 @@ async function startLevelBot() {
         } else {
           data.kcoin += kcoinReward;
         }
+	await updateQuestProgress(id, 'fish');
         await saveLevel(id, data);
         
         return message.reply(`🎣 Bạn móc 1 con mồi vào cần và quăng xuống nước...\n💦 Kéo lên! Bạn đã câu được ${rewardText}`);
@@ -415,6 +486,7 @@ async function startLevelBot() {
         } 
         
         // Xử lý cho Rương và Mồi Câu (Cộng dồn vào Inventory)
+// Xử lý cho Rương và Mồi Câu (Cộng dồn vào Inventory)
         else {
           await saveLevel(id, data);
           
@@ -423,12 +495,20 @@ async function startLevelBot() {
             // Đã có vật phẩm này -> Cập nhật cộng thêm số lượng
             await pool.query("UPDATE inventory SET quantity = quantity + $1 WHERE id=$2", [amount, invCheck.rows[0].id]);
           } else {
-            // Chưa có vật phẩm -> Tạo mới
-            await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, $2, $3, $4)", [id, itemType, itemName, amount]);
+            // Chưa có vật phẩm -> Dùng lệnh INSERT để tạo mới
+            await pool.query(
+              "INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, $2, $3, $4)", 
+              [id, itemType, itemName, amount]
+            );
           }
-          return message.reply(`🛍️ Mua thành công **${amount}x ${itemName}** với tổng giá **${totalCost.toLocaleString()} Kcoin**. Dùng \`${prefix}inv\` để kiểm tra đồ nhé!`);
+
+          // Cập nhật nhiệm vụ hàng ngày cho việc mua đồ (Nhớ thêm dòng này nè)
+          await updateQuestProgress(id, 'buy_shop');
+
+          // Thông báo cho người dùng biết mua thành công
+          return message.reply(`🛍️ Chúc mừng! Bạn đã mua thành công **${amount}x ${itemName}** với giá **${totalCost.toLocaleString()} Kcoin**.`);
         }
-      }
+      } // <--- Kết thúc lệnh buy
 
       // --- Lệnh Túi đồ (Inventory) ---
       // --- Lệnh Túi đồ (Inventory) ---
@@ -473,6 +553,7 @@ async function startLevelBot() {
       }
 
       // --- Lệnh Mở Rương (Use) ---
+      // --- Lệnh Mở Rương (Use) ---
       if (cmd === "use") {
         const index = parseInt(args[0]) - 1;
         const amount = parseInt(args[1]) || 1;
@@ -484,7 +565,16 @@ async function startLevelBot() {
         if (!targetItem || targetItem.item_type !== 'chest') return message.reply("❌ Vật phẩm không tồn tại hoặc không phải là Rương.");
         if (targetItem.quantity < amount) return message.reply(`❌ Bạn chỉ có ${targetItem.quantity} rương này.`);
 
+        // 1. Trừ rương khỏi túi TRƯỚC (để tránh lỗi phát sinh giữa chừng)
+        if (targetItem.quantity === amount) {
+          await pool.query("DELETE FROM inventory WHERE id=$1", [targetItem.id]);
+        } else {
+          await pool.query("UPDATE inventory SET quantity = quantity - $1 WHERE id=$2", [amount, targetItem.id]);
+        }
+
         let openedText = "";
+
+        // 2. Vòng lặp mở nhiều rương
         for (let i = 0; i < amount; i++) {
           const rand = Math.random() * 100;
           let setName = "";
@@ -521,21 +611,21 @@ async function startLevelBot() {
           if (setName === 'Kim Cương') { s_xp = randInt(40, 60); s_jpC = randInt(3, 5); s_jpM = randInt(50, 100); }
           if (setName === 'Phượng Hoàng') { s_xp = randInt(80, 100); s_jpC = randInt(7, 10); s_jpM = randInt(200, 500); s_gamble = randInt(1, 5); }
 
+          // LƯU Ý: TRANG BỊ KHÔNG CỘNG DỒN. Luôn luôn Insert dòng mới.
+          // Tùy vào bảng inventory của bạn có những cột nào, hãy chỉnh lại đoạn [s_xp, s_jpC...] cho khớp với cấu trúc SQL của bạn nhé.
           await pool.query(
-            "INSERT INTO inventory (userid, item_type, item_name, part, set_name, stat_xp, stat_jp_chance, stat_jp_money, stat_gamble) VALUES ($1, 'equip', $2, $3, $4, $5, $6, $7, $8)",
-            [id, finalName, part, setName, s_xp, s_jpC, s_jpM, s_gamble]
+            "INSERT INTO inventory (userid, item_type, item_name, quantity, stat_xp, stat_jpc, stat_jpm, stat_gamble) VALUES ($1, 'equip', $2, 1, $3, $4, $5, $6)",
+            [id, finalName, s_xp, s_jpC, s_jpM, s_gamble]
           );
-          openedText += `✨ **${finalName}** (+${s_xp}% XP)\n`;
-        }
 
-        // Trừ rương khỏi túi
-        if (targetItem.quantity === amount) {
-          await pool.query("DELETE FROM inventory WHERE id=$1", [targetItem.id]);
-        } else {
-          await pool.query("UPDATE inventory SET quantity = quantity - $1 WHERE id=$2", [amount, targetItem.id]);
-        }
+          openedText += `🔹 **${finalName}** (XP: +${s_xp}% | JP Chance: +${s_jpC}%)\n`;
+        } // <--- ĐÓNG NGOẶC VÒNG LẶP FOR Ở ĐÂY
 
-        return message.reply(`🎉 Bạn đã mở **${amount} ${targetItem.item_name}** và nhận được:\n${openedText}`);
+        // 3. Cập nhật Quest "Mở rương" 1 LẦN DUY NHẤT ở ngoài vòng lặp
+        await updateQuestProgress(id, 'open_chest', amount);
+
+        // 4. Thông báo kết quả
+        return message.reply(`🎉 Bạn đã mở **${amount}x ${targetItem.item_name}** và nhận được:\n${openedText}`);
       }
 
       // --- Lệnh Trang bị (Equip) ---
@@ -557,10 +647,12 @@ async function startLevelBot() {
         await pool.query("UPDATE inventory SET is_equipped=false WHERE userid=$1 AND part=$2", [id, targetItem.part]);
         // Mặc trang bị mới
         await pool.query("UPDATE inventory SET is_equipped=true WHERE id=$1", [targetItem.id]);
+	await updateQuestProgress(id, 'equip');
         return message.reply(`⚔️ Đã trang bị thành công **${targetItem.item_name}**!`);
       }
 
       // --- Lệnh Tặng đồ (Give Item) ---
+     // --- Lệnh Tặng Đồ (Giveitem) ---
       if (cmd === "giveitem") { 
         const targetUser = message.mentions.users.first();
         const index = parseInt(args[1]) - 1;
@@ -568,29 +660,48 @@ async function startLevelBot() {
         if (!targetUser || targetUser.bot) return message.reply(`❌ Dùng: \`${prefix}giveitem @user <STT>\``);
         if (isNaN(index) || index < 0) return message.reply("❌ Nhập đúng số thứ tự món đồ cần tặng.");
 
+        // Lấy danh sách túi đồ của người gửi
         const invData = await pool.query("SELECT * FROM inventory WHERE userid=$1 ORDER BY item_type ASC, id ASC", [id]);
         const targetItem = invData.rows[index];
 
         if (!targetItem) return message.reply("❌ Không tìm thấy vật phẩm trong túi của bạn.");
         if (targetItem.is_equipped) return message.reply("❌ Hãy tháo trang bị ra trước khi đem đi cho người khác.");
 
-        if (targetItem.item_type === 'chest') {
-          if (targetItem.quantity === 1) {
-              await pool.query("UPDATE inventory SET userid=$1 WHERE id=$2", [targetUser.id, targetItem.id]);
-          } else {
-            await pool.query("UPDATE inventory SET quantity = quantity - 1 WHERE id=$1", [targetItem.id]);
-            const check = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name=$2", [targetUser.id, targetItem.item_name]);
-            if (check.rows.length > 0) {
-                await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [check.rows[0].id]);
+        // PHÂN LOẠI 1: Nếu món đồ là Trang Bị (Mũ, Giáp, Quần...) -> KHÔNG STACK, chỉ đổi ID chủ sở hữu sang người nhận
+        if (targetItem.item_type === 'equip') {
+            await pool.query("UPDATE inventory SET userid=$1 WHERE id=$2", [targetUser.id, targetItem.id]);
+        } 
+        // PHÂN LOẠI 2: Nếu là đồ tiêu hao (Rương, Mồi, Khoáng sản...) -> DÙNG LOGIC STACK
+        else {
+            // 1. Trừ của người gửi (Nếu chỉ còn 1 cái thì xóa luôn dòng đó, nếu > 1 thì trừ đi 1)
+            if (targetItem.quantity === 1) {
+                await pool.query("DELETE FROM inventory WHERE id=$1", [targetItem.id]);
             } else {
-                await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, 'chest', $2, 1)", [targetUser.id, targetItem.item_name]);
+                await pool.query("UPDATE inventory SET quantity = quantity - 1 WHERE id=$1", [targetItem.id]);
             }
-          }
-        } else {
-          // Là trang bị
-          await pool.query("UPDATE inventory SET userid=$1 WHERE id=$2", [targetUser.id, targetItem.id]);
+
+            // 2. Kiểm tra và cộng dồn cho người nhận
+            const receiverInv = await pool.query(
+                "SELECT * FROM inventory WHERE userid=$1 AND item_name=$2",
+                [targetUser.id, targetItem.item_name]
+            );
+
+            if (receiverInv.rows.length > 0) {
+                // Đã có -> Cộng dồn số lượng thêm 1
+                await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [receiverInv.rows[0].id]);
+            } else {
+                // Chưa có -> Tạo ô đồ mới cho người nhận
+                await pool.query(
+                    "INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, $2, $3, $4)",
+                    [targetUser.id, targetItem.item_type, targetItem.item_name, 1]
+                );
+            }
         }
-        return message.reply(`🎁 Bạn đã tặng **${targetItem.item_name}** cho <@${targetUser.id}> thành công!`);
+
+        // Cập nhật Quest "Chuyển tiền hoặc đồ 1 lần" cho người gửi
+        await updateQuestProgress(id, 'give');
+
+        return message.reply(`🎁 Bạn đã chuyển thành công **1x ${targetItem.item_name}** cho <@${targetUser.id}>.`);
       }
 
       // --- Lệnh Xem Tiền (Cash) ---
@@ -671,48 +782,71 @@ if (cmd === "addreward") {
 
 // --- SỬA ĐOẠN NÀY ---
 if (cmd === "quest") {
-    const qData = await getQuest(id);
-    const uData = await getLevel(id);
-    let replyMsg = "";
+  const qData = await getQuest(id);
+  const uData = await getLevel(id);
+  let replyMsg = "";
+  let completedCount = 0;
+  let updated = false;
 
-    // Check Chat 50
-    if (qData.chat_count >= 50 && !qData.chat_claimed) {
-        uData.kcoin += 1000;
-        qData.chat_claimed = true;
-        replyMsg += "✅ Bạn đã hoàn thành **Chat 50 tin nhắn** và nhận được **1,000 Kcoin**!\n";
+  // 1. Kiểm tra và trao thưởng cho từng nhiệm vụ lẻ
+  for (const key of qData.active_quests) {
+    const qInfo = BASE_QUESTS[key];
+    const currentProg = qData.progress[key];
+    const isClaimed = qData.claimed[key];
+
+    if (currentProg >= qInfo.max) {
+      if (!isClaimed) {
+        uData.kcoin += qInfo.rewardKC;
+        qData.claimed[key] = true;
+        replyMsg += `✅ Hoàn thành **${qInfo.desc}** -> Nhận **${qInfo.rewardKC} Kcoin**\n`;
+        updated = true;
+        completedCount++;
+      } else {
+        completedCount++;
+      }
+    }
+  }
+
+  // 2. Nếu xong cả 3 và chưa nhận Rương II
+  if (completedCount === 3 && !qData.all_claimed) {
+    const invCheck = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name='Rương II'", [id]);
+    if (invCheck.rows.length > 0) {
+      await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [invCheck.rows[0].id]);
+    } else {
+      await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, 'chest', 'Rương II', 1)", [id]);
     }
     
-    // Check Voice 30
-    if (qData.voice_mins >= 30 && !qData.voice_claimed) {
-        const invCheck = await pool.query("SELECT * FROM inventory WHERE userid=$1 AND item_name='Rương I'", [id]);
-        if (invCheck.rows.length > 0) {
-            await pool.query("UPDATE inventory SET quantity = quantity + 1 WHERE id=$1", [invCheck.rows[0].id]);
-        } else {
-            await pool.query("INSERT INTO inventory (userid, item_type, item_name, quantity) VALUES ($1, 'chest', 'Rương I', 1)", [id]);
-        }
-        qData.voice_claimed = true;
-        replyMsg += "✅ Bạn đã hoàn thành **Treo Voice 30 phút** và nhận được **1x 📦 Rương I**!\n";
-    }
+    qData.all_claimed = true;
+    updated = true;
+    replyMsg += `\n🎉 **BINGO!** Bạn đã hoàn thành 3 nhiệm vụ ngày và nhận được **1x 🧰 Rương II**!\n`;
+  }
 
-    // Nếu có quà thì lưu và thông báo trước
-    if (replyMsg !== "") {
-        await saveLevel(id, uData);
-        await saveQuest(id, qData);
-        await message.reply(`🎉 **CHÚC MỪNG!**\n${replyMsg}`);
-        // Không dùng return ở đây để code chạy tiếp xuống dưới hiện Embed
-    }
+  if (updated) {
+    await saveLevel(id, uData);
+    await saveQuest(id, qData);
+    await message.reply(replyMsg);
+  }
 
-    // Hiển thị tiến độ (Đoạn này giữ nguyên Embed như cũ của bạn)
-    const chatProg = Math.min(qData.chat_count, 50);
-    const voiceProg = Math.min(qData.voice_mins, 30);
-    const qEmbed = new EmbedBuilder()
-        .setTitle("📜 Bảng Nhiệm Vụ Hằng Ngày")
-        .addFields(
-            { name: "💬 Chat 50 lần", value: `Tiến độ: **${chatProg}/50** ${qData.chat_claimed ? "✅" : "🎁"}` },
-            { name: "🎙️ Voice 30 phút", value: `Tiến độ: **${voiceProg}/30** ${qData.voice_claimed ? "✅" : "🎁"}` }
-        );
+  // 3. Hiển thị Bảng nhiệm vụ (Embed)
+  const qEmbed = new EmbedBuilder()
+    .setTitle("📜 Bảng Nhiệm Vụ Hằng Ngày")
+    .setColor("#00FF00")
+    .setDescription("Hoàn thành cả 3 nhiệm vụ ngẫu nhiên dưới đây để nhận phần thưởng đặc biệt: **1x 🧰 Rương II**");
 
-    return message.channel.send({ embeds: [qEmbed] }); // Dùng channel.send để không bị lặp mention
+  for (let i = 0; i < qData.active_quests.length; i++) {
+    const key = qData.active_quests[i];
+    const qInfo = BASE_QUESTS[key];
+    const prog = qData.progress[key];
+    const isClaimed = qData.claimed[key];
+    
+    const statusIcon = isClaimed ? "✅ Đã nhận" : (prog >= qInfo.max ? "🎁 Gõ lệnh lại để nhận" : "⏳ Chưa xong");
+    qEmbed.addFields({
+      name: `Nhiệm vụ ${i + 1}: ${qInfo.desc}`,
+      value: `Tiến độ: **${prog}/${qInfo.max}** - [${statusIcon}]`
+    });
+  }
+
+  return message.channel.send({ embeds: [qEmbed] });
 }
 
       // --- Lệnh Nhận Thưởng Ngày (Daily) ---
@@ -742,8 +876,9 @@ if (cmd === "quest") {
         data.kcoin += kcoinEarned;
         data.daily_last = now;
         await saveLevel(id, data);
-
+	await updateQuestProgress(id, 'daily');
         return message.reply(replyMsg);
+	
       }
 
     // --- Lệnh Chơi Cờ Bạc (Coinflip) ---
@@ -769,7 +904,7 @@ if (cmd === "quest") {
           
           data.kcoin += totalReturn; 
           await saveLevel(id, data);
-          
+          await updateQuestProgress(id, 'cf_win');
           return message.reply(`🪙 **NGỬA!** Bạn thắng **${totalReturn.toLocaleString()} Kcoin**\n*(Gồm ${bet.toLocaleString()} gốc + ${profit.toLocaleString()} lời nhờ buff +${buffs.gamble}% cờ bạc)*`);
         } else {
           // 3. Thua: Đã trừ tiền ở bước 1 rồi, chỉ cần lưu vào Database
@@ -795,7 +930,8 @@ if (cmd === "quest") {
         receiverData.kcoin += amount;
 
         await saveLevel(id, senderData);
-        await saveLevel(targetUser.id, receiverData);
+        await saveLevel(targetUser.id, receiverData);	
+	await updateQuestProgress(id, 'give');
         return message.reply(`💸 Bạn đã chuyển thành công **${amount.toLocaleString()} Kcoin** cho <@${targetUser.id}>.`);
       }
 
@@ -878,12 +1014,8 @@ if (cmd === "quest") {
     }
 
     // --- Quest: Tích luỹ số lần chat ---
-    const qData = await getQuest(id);
-    if (!qData.chat_claimed && qData.chat_count < 50) {
-      qData.chat_count++;
-      await saveQuest(id, qData);
-    }
-
+updateQuestProgress(userId, 'chat');
+    
     // --- Tiền Kcoin rớt ra & Logic Jackpot ---
     const baseKcoinDrop = Math.floor(Math.random() * 20) + 1; 
     let finalKcoinDrop = Math.floor(baseKcoinDrop * baseMult);
@@ -951,11 +1083,7 @@ if (cmd === "quest") {
         data.xp_year += voiceXp;
 
         // --- Quest: Tích luỹ thời gian Voice (Mỗi phút) ---
-        const qData = await getQuest(userId);
-        if (!qData.voice_claimed && qData.voice_mins < 30) {
-          qData.voice_mins++;
-          await saveQuest(userId, qData);
-        }
+        updateQuestProgress(userId, 'voice');
 
         // --- Tiền rớt Voice & Logic Jackpot ---
         let finalKcoinDrop = Math.floor(10 * baseMult);
