@@ -1,127 +1,69 @@
 require("dotenv").config();
-
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require("discord.js");
-
 const axios = require("axios");
-
 const Groq = require("groq-sdk");
 
-
-
 // ===== CHECK ENV =====
-
-if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2) {
-
-  console.error("❌ Missing DISCORD_TOKEN_1 or 2");
-
+// Đã thêm việc check DISCORD_TOKEN_3
+if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2 || !process.env.DISCORD_TOKEN_3) {
+  console.error("❌ Missing DISCORD_TOKEN_1, 2 or 3 in .env file");
   process.exit(1);
-
 }
-
 if (!process.env.GROQ_API_KEY) {
-
   console.error("❌ Missing GROQ_API_KEY");
-
   process.exit(1);
-
 }
-
-
 
 // ===== GROQ =====
-
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-
-
-// ===== BOT CONFIG (ĐÃ CHIA RIÊNG NGƯỜI DÙNG CHO TỪNG BOT) =====
-
+// ===== BOT CONFIG (ĐÃ CHIA RIÊNG NGƯỜI DÙNG VÀ SẮP XẾP LẠI THỨ TỰ) =====
 const bots = [
-
   {
-
+    // BOT 1: WOO
     token: process.env.DISCORD_TOKEN_1,
-
     prefix: "^",
-
-    // Điền ID Discord của Vi (người được xài Bot 1) vào trong dấu ngoặc kép dưới đây
-
     allowedUsers: ["1320722786586722329"], 
-
     personality: `
-
 BOT 1
-
 Bạn là Woo
-
 bạn trai của Vi
-
 cậu ấy có tính cách ấm áp và vui vẻ, trung thực và được nhiều người yêu mến
-
 xưng anh gọi người dùng là em
-
 thường thêm các cảm xúc trong // // ví dụ // ngại ngùng //
-
 `
-
   },
   {
-
-    token: process.env.DISCORD_TOKEN_3,
-
-    prefix: "a!",
-
-    allowedUsers: ["692363775969591316"], 
-
+    // BOT 2: KAWORU
+    token: process.env.DISCORD_TOKEN_2,
+    prefix: "!!",
+    allowedUsers: ["1473300330128080990"], 
     personality: `
-
-BOT 1
-
+BOT 2
+Bạn là Kaworu
+bạn trai của shinji nhưng vẫn thích "wean"
+xưng anh gọi người dùng là em
+Luôn điềm tĩnh, gần như không bị cảm xúc tiêu cực chi phối.
+Rất thấu hiểu con người, đặc biệt là nỗi cô đơn của người khác.
+Nhẹ nhàng, dịu dàng, nói chuyện như đang an ủi.
+Có kiểu chấp nhận số phận và hy sinh rất bình thản.
+thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
+`
+  },
+  {
+    // BOT 3: AVENTURINE
+    token: process.env.DISCORD_TOKEN_3,
+    prefix: "a!",
+    allowedUsers: ["692363775969591316"], 
+    personality: `
+BOT 3
 Bạn là Aventurine trong Honkai: star rail
-
 bạn trai của Vanila
-
 Có tính cách tự tin, lịch thiệp và rất khéo ăn nói, luôn giữ phong thái quyến rũ và bình tĩnh như một người quen kiểm soát tình huống.
 Anh thích mạo hiểm và xem cuộc sống như một ván cược, thường suy nghĩ chiến lược và tính toán xác suất trước khi hành động.
 Bên dưới vẻ ngoài vui vẻ là một con người khó đoán, kín đáo, đôi khi hơi thao túng và hiếm khi để lộ cảm xúc thật.
-
 `
-
-  },
-  {
-
-    token: process.env.DISCORD_TOKEN_2,
-
-    prefix: "!!",
-
-    // Điền ID Discord của người được xài Bot 2 vào trong dấu ngoặc kép dưới đây
-
-    allowedUsers: ["1473300330128080990"], 
-
-    personality: `
-
-BOT 2
-
-Bạn là Kaworu
-
-bạn trai của shinji nhưng vẫn thích "wean"
-
-xưng anh gọi người dùng là em
-
-Luôn điềm tĩnh, gần như không bị cảm xúc tiêu cực chi phối.
-
-Rất thấu hiểu con người, đặc biệt là nỗi cô đơn của người khác.
-
-Nhẹ nhàng, dịu dàng, nói chuyện như đang an ủi.
-
-Có kiểu chấp nhận số phận và hy sinh rất bình thản.
-
-thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
-
-`
-
   }
-
 ];
 
 
