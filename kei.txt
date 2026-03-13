@@ -111,7 +111,7 @@ async function initDB() {
       )
     `);
 
-    // Fix thiếu cột prefix nếu database cũ đã có
+    // Fix thiếu cột prefix
     await pool.query(`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS prefix TEXT DEFAULT 'lvl!';`).catch(() => {});
 
     // Bảng Túi đồ (Inventory)
@@ -141,12 +141,10 @@ async function initDB() {
       )
     `);
     
-    // --- BẮT ĐẦU ĐOẠN FIX LỖI "CATCH" ---
-    // Phải bọc lệnh kiểm tra bảng quests vào một khối try riêng biệt!
+    // --- KHỐI TRY/CATCH KIỂM TRA BẢNG QUESTS CHUẨN 100% ---
     try {
       await pool.query("SELECT active_quests FROM quests LIMIT 1");
     } catch (e) {
-      // Nếu bảng chưa có hoặc sai cấu trúc, thì drop và tạo lại
       await pool.query("DROP TABLE IF EXISTS quests");
       await pool.query(`
         CREATE TABLE quests (
@@ -158,9 +156,18 @@ async function initDB() {
           last_reset BIGINT DEFAULT 0
         )
       `);
-    }
-    // --- KẾT THÚC ĐOẠN FIX LỖI ---
+    } // <--- CHÍNH CÁI DẤU NGOẶC NÀY NÃY GIỜ LÀM BẠN KHỔ SỞ ĐÂY!
 
+    // Load prefix vào cache
+    const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
+    prefixes.rows.forEach(r => guildPrefixCache.set(r.guildid, r.prefix));
+
+    console.log("✅ Database đã sẵn sàng và tạo bảng thành công!");
+
+  } catch (error) { 
+    console.error("❌ Lỗi khởi tạo Database:", error.message);
+  }
+}
     // Load prefix vào cache (Khôi phục lại từ code cũ của bạn)
     const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
     prefixes.rows.forEach(r => guildPrefixCache.set(r.guildid, r.prefix));
