@@ -169,28 +169,7 @@ async function initDB() {
   }
 }
 
-// BÊN DƯỚI DÒNG NÀY PHẢI LÀ HÀM getLevel CỦA BẠN:
-// async function getLevel(id) {
-// ...
-    // Load prefix vào cache (Khôi phục lại từ code cũ của bạn)
-    const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
-    prefixes.rows.forEach(r => guildPrefixCache.set(r.guildid, r.prefix));
 
-    console.log("✅ Database đã sẵn sàng và tạo bảng thành công!");
-
-  } catch (error) { // Bắt lỗi tổng nếu cả cái Database sập
-    console.error("❌ Lỗi khởi tạo Database:", error.message);
-  }
-}
-    // Load prefix vào cache
-    const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
-    prefixes.rows.forEach(r => guildPrefixCache.set(r.guildid, r.prefix));
-
-    console.log("✅ Database đã sẵn sàng và tạo bảng thành công!");
-  } catch (error) {
-    console.error("❌ Lỗi khởi tạo Database:", error.message);
-  }
-}
 
 async function getLevel(id) {
   const res = await pool.query("SELECT * FROM levels WHERE userid=$1", [id]);
