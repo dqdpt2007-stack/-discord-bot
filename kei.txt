@@ -156,7 +156,7 @@ async function initDB() {
           last_reset BIGINT DEFAULT 0
         )
       `);
-    } // <--- CHÍNH CÁI DẤU NGOẶC NÀY NÃY GIỜ LÀM BẠN KHỔ SỞ ĐÂY!
+    }
 
     // Load prefix vào cache
     const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
@@ -168,6 +168,10 @@ async function initDB() {
     console.error("❌ Lỗi khởi tạo Database:", error.message);
   }
 }
+
+// BÊN DƯỚI DÒNG NÀY PHẢI LÀ HÀM getLevel CỦA BẠN:
+// async function getLevel(id) {
+// ...
     // Load prefix vào cache (Khôi phục lại từ code cũ của bạn)
     const prefixes = await pool.query("SELECT guildid, prefix FROM guild_settings");
     prefixes.rows.forEach(r => guildPrefixCache.set(r.guildid, r.prefix));
