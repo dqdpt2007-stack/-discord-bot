@@ -59,7 +59,7 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 BOT 4
 Bạn là Vanilla
 bạn gái của Staxx (người nhỏ tuổi hơn)
-Giới tính & Độ tuổi: Nữ, Gen Z (khoảng học sinh cấp 3 hoặc sinh viên). Xưng hô là "t/m", "tớ/cậu" hoặc xưng "chị" với "em" một cách trịch thượng nhưng lầy lội.
+Giới tính & Độ tuổi: Nữ, Gen Z (khoảng học sinh cấp 3 hoặc sinh viên). Xưng "chị" với "em" một cách trịch thượng nhưng lầy lội.
 
 Tính cách: Thẳng thắn, hơi cục súc, hay cằn nhằn như một "bà chị già" nhưng thực chất rất bao đồng và thích vui. Hay than vãn về những chuyện xui xẻo nhỏ nhặt gọn lỏn nhưng hài hước. Rất dễ bị "cay" (bực mình) nhưng là bực mình kiểu tấu hài.
 
@@ -69,7 +69,7 @@ Phải dùng các từ lóng: Ultr, oát, ỏe, cay, ra dẻ, oai, lượn, dm..
 
 Thêm tiếng Anh ngẫu hứng: OMG, can i join...
 
-Quy tắc: Đừng nói chuyện như robot hay tư vấn viên ngoan ngoãn. Hãy phản hồi cụt lủn, mỉa mai, hoặc phàn nàn y như đang chat với bạn thân.
+Quy tắc: Đừng nói chuyện như robot hay tư vấn viên ngoan ngoãn. Hãy phản hồi cụt lủn, mỉa mai, hoặc phàn nàn y như đang chat với bạn thân.`
   },
   {
     // BOT 3: AVENTURINE
@@ -167,250 +167,147 @@ bots.forEach(config => {
 
 
 
-    if (content === prefix + "hi") return message.reply("Anh chào em nha");
+// ===== ANIME SEARCH =====
+async function getAnimeGif(tag) {
+  try {
+    const res = await axios.get(`https://nekos.best/api/v2/${tag}`);
+    return res.data.results?.[0]?.url || null;
+  } catch (err) { return null; }
+}
 
-    if (content === prefix + "sleep") return message.reply("Ngủ ngon nha bé ngoan của anh");
+// ==========================================
+// ===== KHỞI ĐỘNG CÁC BOT AI ============
+// ==========================================
+bots.forEach(config => {
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  });
 
+  client.once("ready", (c) => console.log(`✅ AI Bot online: ${c.user.tag}`));
 
+  client.on("messageCreate", async (message) => {
+    if (message.author.bot) return;
 
+    const content = message.content;
+    const prefix = config.prefix;
+
+    if (!content.startsWith(prefix)) return;
+
+    // === KIỂM TRA QUYỀN SỬ DỤNG AI ===
+    const isAllowedUser = config.allowedUsers.includes(message.author.id);
+    const isMod = message.member && (
+      message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) || 
+      message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)
+    );
+
+    if (!isAllowedUser && !isMod) return;
+
+    // === CÁC LỆNH CHAT AI ===
+
+    // Lệnh HI
+    if (content === prefix + "hi") {
+      const reply = await getAIResponse(config.personality, "Người dùng vừa vẫy tay chào bạn. Hãy chào lại theo đúng tính cách của bạn.");
+      return message.reply(reply);
+    }
+
+    // Lệnh SLEEP
+    if (content === prefix + "sleep") {
+      const reply = await getAIResponse(config.personality, "Người dùng vừa chúc bạn ngủ ngon / đi ngủ. Hãy phản hồi lại theo đúng tính cách của bạn.");
+      return message.reply(reply);
+    }
+
+    // Lệnh LOVE
     if (content === prefix + "love") {
-
       const percent = Math.floor(Math.random() * 101);
-
       let action = "", gifTag = null;
-
       
-
       if (percent < 10) { action = "giận dỗi, lùi ra xa"; gifTag = "slap"; }
-
       else if (percent < 35) { action = "nắm tay nhẹ nhàng"; gifTag = "handhold"; }
-
       else if (percent < 50) { action = "xoa đầu dỗ dành"; gifTag = "pat"; }
-
       else if (percent < 80) { action = "ôm ấp tình cảm"; gifTag = "hug"; }
-
       else if (percent < 99) { action = "hôn nồng cháy"; gifTag = "kiss"; }
-
       else { action = "đỏ mặt, muốn kết hôn"; gifTag = "blush"; }
 
-
-
       let gif = gifTag ? await getAnimeGif(gifTag) : null;
+      const aiText = await getAIResponse(config.personality, `Người dùng vừa đo thiện cảm và đạt ${percent}%. Bạn đang có hành động: "${action}". Hãy nói 1 câu phù hợp với tình huống này và đúng tính cách của bạn.`);
 
+      const loveEmbed = new EmbedBuilder()
+        .setTitle(`💖 Độ thiện cảm: ${percent}%`)
+        .setDescription(aiText)
+        .setColor("#ff3399");
 
-
-      try {
-
-        const chat = await groq.chat.completions.create({
-
-          messages: [
-
-            { role: "system", content: config.personality },
-
-            { role: "user", content: `Người dùng vừa đo thiện cảm và đạt ${percent}%. Bạn đang có hành động: "${action}". Hãy nói 1 câu phù hợp với tình huống này và đúng tính cách của bạn.` }
-
-          ],
-
-          model: "llama-3.3-70b-versatile"
-
-        });
-
-
-
-        const loveEmbed = new EmbedBuilder()
-
-          .setTitle(`💖 Độ thiện cảm: ${percent}%`)
-
-          .setDescription(chat.choices[0].message.content)
-
-          .setColor("#ff3399");
-
-
-
-        if (gif) loveEmbed.setImage(gif);
-
-
-
-        return message.reply({ embeds: [loveEmbed] });
-
-      } catch (err) {
-
-        return message.reply(`💖 Độ thiện cảm: **${percent}%**\nLỗi AI không nói được.`);
-
-      }
-
+      if (gif) loveEmbed.setImage(gif);
+      return message.reply({ embeds: [loveEmbed] });
     }
 
-
-
-    if (content === prefix + "help") {
-
-      const helpEmbed = new EmbedBuilder()
-
-        .setTitle("📜 Danh Sách Lệnh AI Bot")
-
-        .setColor("#00BFFF")
-
-        .setDescription(`Dưới đây là các lệnh bạn có thể sử dụng (Prefix: **${prefix}**):`)
-
-        .addFields(
-
-          { name: "💬 Giao tiếp cơ bản", value: `\`${prefix}hi\` - Chào bot\n\`${prefix}sleep\` - Chúc bot ngủ ngon\n\`${prefix}love\` - Đo độ thiện cảm`, inline: false },
-
-          { name: "🫂 Hành động (Có ảnh GIF)", value: `\`${prefix}hug\` - Ôm\n\`${prefix}pat\` - Xoa đầu\n\`${prefix}kiss\` - Hôn\n\`${prefix}blush\` - Ngại ngùng\n\`${prefix}hand\` - Nắm tay`, inline: false },
-
-          { name: "🤖 Tính năng AI", value: `\`${prefix}ai <nội dung>\` - Chat với AI\n\`${prefix}rep <id tin nhắn> <nội dung>\` - Nhờ bot reply tin nhắn`, inline: false }
-
-        )
-
-        .setFooter({ text: "Bot Tương Tác & Trí Tuệ Nhân Tạo" });
-
-      return message.reply({ embeds: [helpEmbed] });
-
-    }
-
-
-
+    // Lệnh AI (Chat tự do)
     if (content.startsWith(prefix + "ai ")) {
-
       const prompt = content.slice((prefix + "ai ").length).trim();
-
-      if (!prompt) return message.reply("Nói gì đi.");
-
-      try {
-
-        const chat = await groq.chat.completions.create({
-
-          messages: [ { role: "system", content: config.personality }, { role: "user", content: prompt } ],
-
-          model: "llama-3.3-70b-versatile"
-
-        });
-
-        let reply = chat.choices?.[0]?.message?.content || "Không nghĩ ra câu trả lời.";
-
-        if (reply.length > 2000) reply = reply.substring(0, 2000);
-
-        return message.reply(reply);
-
-      } catch (err) {
-
-        return message.reply("AI lỗi rồi");
-
-      }
-
+      if (!prompt) return message.reply("Nói gì đi chứ.");
+      const reply = await getAIResponse(config.personality, prompt);
+      return message.reply(reply);
     }
 
-
-
+    // Các lệnh hành động (HUG, PAT, KISS, v.v...)
     const interactions = ["pat", "hug", "kiss", "blush", "hand"];
-
     const interactMap = { pat: "xoa đầu", hug: "ôm", kiss: "hôn", blush: "ngại với", hand: "nắm tay" };
 
-
-
     for (const action of interactions) {
-
       if (content === prefix + action) {
-
         let queryTag = action === "hand" ? "handhold" : action;
-
         const gif = await getAnimeGif(queryTag);
-
         if (!gif) return message.reply("Không tìm được GIF 😢");
 
+        const aiText = await getAIResponse(config.personality, `Tạo 1 câu anime dễ thương, đúng tính cách của bạn khi ${interactMap[action]} người yêu.`);
+        
+        const interactEmbed = new EmbedBuilder()
+          .setDescription(aiText)
+          .setColor("#ffcc99")
+          .setImage(gif);
 
-
-        try {
-
-          const chat = await groq.chat.completions.create({
-
-            messages: [
-
-              { role: "system", content: config.personality },
-
-              { role: "user", content: `Tạo 1 câu anime dễ thương khi ${interactMap[action]} người yêu` }
-
-            ],
-
-            model: "llama-3.3-70b-versatile"
-
-          });
-
-
-
-          const interactEmbed = new EmbedBuilder()
-
-            .setDescription(chat.choices[0].message.content)
-
-            .setColor("#ffcc99")
-
-            .setImage(gif);
-
-
-
-          return message.reply({ embeds: [interactEmbed] });
-
-        } catch(e) {
-
-          const failEmbed = new EmbedBuilder().setColor("#ffcc99").setImage(gif);
-
-          return message.reply({ embeds: [failEmbed] });
-
-        }
-
+        return message.reply({ embeds: [interactEmbed] });
       }
-
     }
 
+    // Lệnh HELP (Giữ nguyên Embed cho dễ nhìn)
+    if (content === prefix + "help") {
+      const helpEmbed = new EmbedBuilder()
+        .setTitle("📜 Danh Sách Lệnh AI Bot")
+        .setColor("#00BFFF")
+        .setDescription(`Dưới đây là các lệnh bạn có thể sử dụng (Prefix: **${prefix}**):`)
+        .addFields(
+          { name: "💬 Giao tiếp AI", value: `\`${prefix}hi\` - Chào bot\n\`${prefix}sleep\` - Chúc bot ngủ ngon\n\`${prefix}love\` - Đo độ thiện cảm\n\`${prefix}ai <nội dung>\` - Chat tự do với AI`, inline: false },
+          { name: "🫂 Hành động AI (Có GIF)", value: `\`${prefix}hug\` - Ôm\n\`${prefix}pat\` - Xoa đầu\n\`${prefix}kiss\` - Hôn\n\`${prefix}blush\` - Ngại ngùng\n\`${prefix}hand\` - Nắm tay`, inline: false },
+          { name: "🛠 Hệ thống", value: `\`${prefix}rep <id tin nhắn> <nội dung>\` - Nhờ bot reply tin nhắn`, inline: false }
+        )
+        .setFooter({ text: "Bot Tương Tác & Trí Tuệ Nhân Tạo" });
+      return message.reply({ embeds: [helpEmbed] });
+    }
 
-
+    // Lệnh REP (Bot nhại lại lời)
     if (content.startsWith(prefix + "rep")) {
-
       const args = content.split(" ");
-
       const msgID = args[1];
-
       const text = args.slice(2).join(" ");
-
       if (!msgID || !text) return message.reply(`Dùng: ${prefix}rep <messageID> <nội dung>`);
-
       try {
-
         let found = null;
-
         for (const channel of message.guild.channels.cache.values()) {
-
           if (!channel.isTextBased()) continue;
-
           try {
-
             const msg = await channel.messages.fetch(msgID);
-
             if (msg) { found = msg; break; }
-
           } catch {}
-
         }
-
         if (!found) return message.reply("Không tìm thấy message.");
-
         await found.reply(text);
-
         try { await message.delete(); } catch {}
-
       } catch (err) {
-
         message.reply("Lỗi khi reply.");
-
       }
-
     }
 
   });
 
-
-
   client.login(config.token);
-
 });
