@@ -305,7 +305,6 @@ bots.forEach(config => {
       } catch (err) {
         message.reply("Lỗi khi reply.");
       }
-    }
 
   });
 
