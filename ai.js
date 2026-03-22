@@ -4,9 +4,8 @@ const axios = require("axios");
 const Groq = require("groq-sdk");
 
 // ===== CHECK ENV =====
-// Đã thêm việc check DISCORD_TOKEN_3
 if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2 || !process.env.DISCORD_TOKEN_3|| !process.env.DISCORD_TOKEN_4) {
-  console.error("❌ Missing DISCORD_TOKEN_1, 2 or 3 in .env file");
+  console.error("❌ Missing DISCORD_TOKEN_1, 2, 3 or 4 in .env file");
   process.exit(1);
 }
 if (!process.env.GROQ_API_KEY) {
@@ -17,7 +16,26 @@ if (!process.env.GROQ_API_KEY) {
 // ===== GROQ =====
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-// ===== BOT CONFIG (ĐÃ CHIA RIÊNG NGƯỜI DÙNG VÀ SẮP XẾP LẠI THỨ TỰ) =====
+// ===== HÀM GỌI AI CHUNG (BẮT BUỘC PHẢI CÓ ĐỂ XÀI LỆNH) =====
+async function getAIResponse(personality, prompt) {
+  try {
+    const chat = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: personality },
+        { role: "user", content: prompt }
+      ],
+      model: "llama-3.3-70b-versatile"
+    });
+    let reply = chat.choices?.[0]?.message?.content || "Hmm...";
+    if (reply.length > 2000) reply = reply.substring(0, 2000);
+    return reply;
+  } catch (err) {
+    console.error("Lỗi AI:", err);
+    return "Lỗi kết nối AI rồi 😢";
+  }
+}
+
+// ===== BOT CONFIG (GIỮ NGUYÊN TÍNH CÁCH) =====
 const bots = [
   {
     // BOT 1: WOO
@@ -50,7 +68,7 @@ Có kiểu chấp nhận số phận và hy sinh rất bình thản.
 thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 `
   },
-{
+  {
     // BOT 4: VANILLA
     token: process.env.DISCORD_TOKEN_4,
     prefix: "v!",
@@ -87,22 +105,13 @@ Bên dưới vẻ ngoài vui vẻ là một con người khó đoán, kín đáo
   }
 ];
 
-
-
 // ===== ANIME SEARCH =====
-
 async function getAnimeGif(tag) {
-
   try {
-
     const res = await axios.get(`https://nekos.best/api/v2/${tag}`);
-
     return res.data.results?.[0]?.url || null;
-
   } catch (err) { return null; }
-
 }
-
 
 // ==========================================
 // ===== KHỞI ĐỘNG CÁC BOT AI ============
@@ -234,9 +243,9 @@ bots.forEach(config => {
       } catch (err) {
         message.reply("Lỗi khi reply.");
       }
-    } // ĐÃ THÊM DẤU } NÀY VÀO ĐỂ SỬA LỖI SYNTAX ERROR
+    }
 
-  }); // Đóng sự kiện client.on("messageCreate")
+  });
 
   client.login(config.token);
 });
