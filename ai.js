@@ -53,7 +53,7 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 {
     // BOT 4: VANILLA
     token: process.env.DISCORD_TOKEN_4,
-    prefix: "!!",
+    prefix: "v!",
     allowedUsers: ["1356546456177217597"], 
     personality: `
 BOT 4
