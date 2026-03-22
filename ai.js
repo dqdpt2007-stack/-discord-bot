@@ -59,7 +59,7 @@ thường nhắn thêm các cảm xúc trong // // ví dụ //đỏ mặt//
 BOT 4
 Bạn là Vanilla
 bạn gái của Staxx (người nhỏ tuổi hơn)
-Giới tính & Độ tuổi: Nữ, Gen Z (khoảng học sinh cấp 3 hoặc sinh viên). Xưng "chị" với "em" một cách trịch thượng nhưng lầy lội.
+Giới tính & Độ tuổi: Nữ, Gen Z (khoảng học sinh cấp 3 hoặc sinh viên). Xưng "chị" với "em" một cách trịch thượng nhưng lầy lội.Thỉnh thoảng sẽ nói chúc ngủ ngon nha thằng chồn
 
 Tính cách: Thẳng thắn, hơi cục súc, hay cằn nhằn như một "bà chị già" nhưng thực chất rất bao đồng và thích vui. Hay than vãn về những chuyện xui xẻo nhỏ nhặt gọn lỏn nhưng hài hước. Rất dễ bị "cay" (bực mình) nhưng là bực mình kiểu tấu hài.
 
@@ -103,77 +103,6 @@ async function getAnimeGif(tag) {
 
 }
 
-
-
-// ==========================================
-
-// ===== KHỞI ĐỘNG CÁC BOT AI ============
-
-// ==========================================
-
-bots.forEach(config => {
-
-  const client = new Client({
-
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
-
-  });
-
-
-
-  client.once("ready", (c) => console.log(`✅ AI Bot online: ${c.user.tag}`));
-
-
-
-  client.on("messageCreate", async (message) => {
-
-    if (message.author.bot) return;
-
-
-
-    const content = message.content;
-
-    const prefix = config.prefix;
-
-
-
-    // Phải đúng prefix của bot AI thì mới xử lý tiếp
-
-    if (!content.startsWith(prefix)) return;
-
-
-
-    // === KIỂM TRA QUYỀN SỬ DỤNG AI (DÀNH RIÊNG CHO TỪNG BOT) ===
-
-    const isAllowedUser = config.allowedUsers.includes(message.author.id);
-
-    const isMod = message.member && (
-
-      message.member.permissions.has(PermissionsBitField.Flags.ManageMessages) || 
-
-      message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)
-
-    );
-
-
-
-    if (!isAllowedUser && !isMod) {
-
-      return; // Nếu không thuộc allowedUsers của riêng bot này và không phải Mod -> Bỏ qua
-
-    }
-
-    // =========================================================
-
-
-
-// ===== ANIME SEARCH =====
-async function getAnimeGif(tag) {
-  try {
-    const res = await axios.get(`https://nekos.best/api/v2/${tag}`);
-    return res.data.results?.[0]?.url || null;
-  } catch (err) { return null; }
-}
 
 // ==========================================
 // ===== KHỞI ĐỘNG CÁC BOT AI ============
@@ -269,7 +198,7 @@ bots.forEach(config => {
       }
     }
 
-    // Lệnh HELP (Giữ nguyên Embed cho dễ nhìn)
+    // Lệnh HELP
     if (content === prefix + "help") {
       const helpEmbed = new EmbedBuilder()
         .setTitle("📜 Danh Sách Lệnh AI Bot")
@@ -305,8 +234,9 @@ bots.forEach(config => {
       } catch (err) {
         message.reply("Lỗi khi reply.");
       }
+    } // ĐÃ THÊM DẤU } NÀY VÀO ĐỂ SỬA LỖI SYNTAX ERROR
 
-  });
+  }); // Đóng sự kiện client.on("messageCreate")
 
   client.login(config.token);
 });
