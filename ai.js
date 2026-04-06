@@ -2,7 +2,16 @@ require("dotenv").config();
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require("discord.js");
 const axios = require("axios");
 const Groq = require("groq-sdk");
+const express = require('express');
+const app = express();
 
+app.get('/', (req, res) => {
+  res.send('Bot is alive');
+});
+
+app.listen(process.env.PORT || 8080, '0.0.0.0', () => {
+  console.log('Web server running');
+});
 // ===== CHECK ENV =====
 if (!process.env.DISCORD_TOKEN_1 || !process.env.DISCORD_TOKEN_2 || !process.env.DISCORD_TOKEN_3 || !process.env.DISCORD_TOKEN_4 || !process.env.DISCORD_TOKEN_5) {
   console.error("❌ Missing DISCORD_TOKEN_1, 2, 3, 4 or 5 in .env file");
